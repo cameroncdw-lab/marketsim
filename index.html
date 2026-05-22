@@ -383,7 +383,69 @@
   .toast.error { border-color: var(--red2); color: var(--red); }
   .toast.info { border-color: var(--blue); color: var(--blue); }
 
-  /* ── RESPONSIVE ── */
+  /* ── LIVE PANEL ── */
+  .live-layout { display:flex; flex-direction:column; flex:1; overflow-y:auto; gap:0; }
+
+  .live-ticker-row {
+    display:flex; gap:0; border-bottom:1px solid var(--border);
+    overflow-x:auto; flex-shrink:0; scrollbar-width:none; background:var(--surface);
+  }
+  .live-ticker-row::-webkit-scrollbar { display:none; }
+  .live-card {
+    display:flex; flex-direction:column; gap:4px; padding:14px 20px;
+    border-right:1px solid var(--border); cursor:pointer; transition:.15s; flex-shrink:0; min-width:120px;
+  }
+  .live-card:hover { background:var(--surface2); }
+  .live-card.active { background:var(--surface2); border-bottom:2px solid var(--blue); }
+  .live-card-sym { font-size:11px; color:var(--text3); font-family:var(--font-mono); }
+  .live-card-name { font-size:11px; color:var(--text2); }
+  .live-card-price { font-size:16px; font-family:var(--font-mono); font-weight:500; }
+  .live-card-chg { font-size:12px; font-family:var(--font-mono); }
+
+  .live-main { display:flex; flex-direction:column; padding:16px 24px; flex:1; gap:4px; }
+  .live-chart-header { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:4px; }
+
+  .live-symbol-tabs { display:flex; gap:4px; flex-wrap:wrap; }
+  .live-sym-btn {
+    padding:4px 10px; border-radius:5px; cursor:pointer; font-size:12px;
+    border:1px solid var(--border); background:transparent; color:var(--text2);
+    font-family:var(--font-mono); transition:.15s;
+  }
+  .live-sym-btn.active { background:var(--blue); color:#fff; border-color:var(--blue); }
+  .live-sym-btn:hover:not(.active) { border-color:var(--border2); color:var(--text); }
+
+  .live-range-tabs { display:flex; gap:4px; }
+  .live-range-btn {
+    padding:4px 10px; border-radius:5px; cursor:pointer; font-size:11px;
+    border:1px solid var(--border); background:transparent; color:var(--text2);
+    font-family:var(--font-mono); transition:.15s;
+  }
+  .live-range-btn.active { background:var(--surface3); color:var(--text); border-color:var(--border2); }
+  .live-range-btn:hover:not(.active) { color:var(--text); }
+
+  .live-stats-row {
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr));
+    gap:0; border-top:1px solid var(--border); background:var(--surface); flex-shrink:0;
+  }
+  .live-stat-card { padding:12px 16px; border-right:1px solid var(--border); }
+  .live-stat-card:last-child { border-right:none; }
+  .live-stat-label { font-size:10px; color:var(--text3); text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; }
+  .live-stat-val { font-size:14px; font-family:var(--font-mono); font-weight:500; }
+
+  .live-loading {
+    display:flex; align-items:center; justify-content:center; flex:1;
+    flex-direction:column; gap:12px; color:var(--text2); font-size:13px;
+  }
+  .live-spinner {
+    width:28px; height:28px; border:2px solid var(--border2);
+    border-top-color:var(--blue); border-radius:50%;
+    animation:spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .live-dot { width:7px; height:7px; border-radius:50%; background:var(--green); display:inline-block; margin-right:5px; animation:pulse 2s infinite; }
+  .live-dot.closed { background:var(--text3); animation:none; }
+
   @media (max-width: 900px) {
     .market-layout { grid-template-columns: 1fr; overflow-y: auto; }
     .chart-area { border-right: none; border-bottom: 1px solid var(--border); }
@@ -421,6 +483,7 @@
     <button class="nav-tab active" onclick="showPanel('market')">📈 Market</button>
     <button class="nav-tab" onclick="showPanel('performance')">📊 Performance</button>
     <button class="nav-tab" onclick="showPanel('learn')">📚 Learn</button>
+    <button class="nav-tab" onclick="showPanel('live')" id="live-tab">🔴 Live</button>
   </div>
   <div class="nav-cash">Cash: <strong id="cash-display">$10,000.00</strong></div>
 </nav>
@@ -430,6 +493,7 @@
   <div class="mobile-tab active" onclick="showPanel('market')">Market</div>
   <div class="mobile-tab" onclick="showPanel('performance')">Performance</div>
   <div class="mobile-tab" onclick="showPanel('learn')">Learn</div>
+  <div class="mobile-tab" onclick="showPanel('live')">Live</div>
 </div>
 
 <!-- TICKER BAR -->
@@ -751,6 +815,89 @@
         </div>
       </div>
       <p style="font-size:11px;color:var(--text3)">SPIVA data: over a 20-year horizon, approximately 92–96% of actively managed large-cap US funds underperform their benchmark index after fees.</p>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════ LIVE PANEL ══════════════ -->
+<div class="panel" id="panel-live">
+  <div class="live-layout">
+
+    <!-- TOP: Ticker cards row -->
+    <div class="live-ticker-row" id="live-cards"></div>
+
+    <!-- MAIN: Big chart -->
+    <div class="live-main">
+      <div class="live-chart-header">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <div class="live-symbol-tabs" id="live-symbol-tabs"></div>
+          <div id="live-price-display" style="display:flex;align-items:baseline;gap:8px;">
+            <span id="live-current-price" style="font-family:var(--font-mono);font-size:26px;font-weight:500;">—</span>
+            <span id="live-price-change" style="font-family:var(--font-mono);font-size:14px;">—</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div id="live-ohlc" style="display:flex;gap:12px;font-size:11px;font-family:var(--font-mono);color:var(--text3);"></div>
+          <div class="live-range-tabs" id="live-range-tabs">
+            <button class="live-range-btn" onclick="setLiveRange('1day')">1D</button>
+            <button class="live-range-btn" onclick="setLiveRange('5day')">5D</button>
+            <button class="live-range-btn active" onclick="setLiveRange('1month')">1M</button>
+            <button class="live-range-btn" onclick="setLiveRange('3month')">3M</button>
+            <button class="live-range-btn" onclick="setLiveRange('6month')">6M</button>
+            <button class="live-range-btn" onclick="setLiveRange('1year')">1Y</button>
+            <button class="live-range-btn" onclick="setLiveRange('5year')">5Y</button>
+          </div>
+          <div style="display:flex;gap:4px;">
+            <button class="ctrl-btn" id="chart-type-line" onclick="setChartType('line')" style="font-size:11px;padding:4px 9px;">Line</button>
+            <button class="ctrl-btn active" id="chart-type-candle" onclick="setChartType('candle')" style="font-size:11px;padding:4px 9px;">Candle</button>
+          </div>
+        </div>
+      </div>
+      <div id="live-status-bar" style="font-size:11px;color:var(--text3);padding:4px 0 6px;display:flex;gap:16px;align-items:center;">
+        <span id="live-market-status"></span>
+        <span id="live-last-updated"></span>
+        <span id="live-refresh-countdown"></span>
+      </div>
+      <div style="position:relative;flex:1;min-height:320px;height:320px;">
+        <canvas id="liveChart" role="img" aria-label="Live market chart">Live market data chart</canvas>
+      </div>
+    </div>
+
+    <!-- BOTTOM: Volume + stats row -->
+    <div class="live-stats-row" id="live-stats-row">
+      <div class="live-stat-card">
+        <div class="live-stat-label">52-Week High</div>
+        <div class="live-stat-val" id="stat-52h">—</div>
+      </div>
+      <div class="live-stat-card">
+        <div class="live-stat-label">52-Week Low</div>
+        <div class="live-stat-val" id="stat-52l">—</div>
+      </div>
+      <div class="live-stat-card">
+        <div class="live-stat-label">Open</div>
+        <div class="live-stat-val" id="stat-open">—</div>
+      </div>
+      <div class="live-stat-card">
+        <div class="live-stat-label">Prev Close</div>
+        <div class="live-stat-val" id="stat-prev">—</div>
+      </div>
+      <div class="live-stat-card">
+        <div class="live-stat-label">Day Range</div>
+        <div class="live-stat-val" id="stat-range">—</div>
+      </div>
+      <div class="live-stat-card">
+        <div class="live-stat-label">Volume</div>
+        <div class="live-stat-val" id="stat-vol">—</div>
+      </div>
+      <div class="live-stat-card">
+        <div class="live-stat-label">Avg Volume</div>
+        <div class="live-stat-val" id="stat-avgvol">—</div>
+      </div>
+      <div class="live-stat-card">
+        <div class="live-stat-label">Market Cap</div>
+        <div class="live-stat-val" id="stat-mktcap">—</div>
+      </div>
     </div>
 
   </div>
@@ -1290,11 +1437,375 @@ function showPanel(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-tab, .mobile-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('panel-' + name).classList.add('active');
-  const tabs = ['market', 'performance', 'learn'];
+  const tabs = ['market', 'performance', 'learn', 'live'];
   const idx = tabs.indexOf(name);
   document.querySelectorAll('.nav-tab')[idx]?.classList.add('active');
   document.querySelectorAll('.mobile-tab')[idx]?.classList.add('active');
   if (name === 'performance') updatePerformancePanel();
+  if (name === 'live') initLive();
+}
+
+// ══════════════════════════════════════════════
+//  LIVE CHARTS
+// ══════════════════════════════════════════════
+
+const TD_KEY = 'fbd47d0357a34fa783f4b381544ecd1c';
+const TD_BASE = 'https://api.twelvedata.com';
+
+const LIVE_SYMBOLS = [
+  { sym:'SPY',  name:'S&P 500 ETF',    color:'#4a9eff' },
+  { sym:'QQQ',  name:'NASDAQ ETF',      color:'#00d17a' },
+  { sym:'DIA',  name:'Dow Jones ETF',   color:'#f5a623' },
+  { sym:'AGG',  name:'US Bonds ETF',    color:'#a78bfa' },
+  { sym:'GLD',  name:'Gold ETF',        color:'#e2e8f0' },
+  { sym:'IWM',  name:'Russell 2000',    color:'#fb7185' },
+  { sym:'VTI',  name:'Total Market',    color:'#34d399' },
+];
+
+let liveChart       = null;
+let liveSymbol      = 'SPY';
+let liveRange       = '1month';
+let liveChartType   = 'candle';
+let liveInitialized = false;
+let liveRefreshTimer= null;
+let liveCountdown   = null;
+let liveCardData    = {};
+let liveCountdownVal= 0;
+
+function isMarketOpen() {
+  const now = new Date();
+  const et  = new Date(now.toLocaleString('en-US', { timeZone:'America/New_York' }));
+  const day = et.getDay();
+  const h   = et.getHours(), m = et.getMinutes();
+  const mins = h * 60 + m;
+  return day >= 1 && day <= 5 && mins >= 570 && mins < 960; // 9:30–16:00 ET
+}
+
+function updateMarketStatus() {
+  const el = document.getElementById('live-market-status');
+  if (!el) return;
+  if (isMarketOpen()) {
+    el.innerHTML = '<span class="live-dot"></span>Market Open';
+  } else {
+    el.innerHTML = '<span class="live-dot closed"></span>Market Closed';
+  }
+}
+
+function fmtPrice(n) {
+  if (n == null || isNaN(n)) return '—';
+  return '$' + parseFloat(n).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
+}
+function fmtVol(n) {
+  if (!n) return '—';
+  if (n >= 1e9) return (n/1e9).toFixed(2)+'B';
+  if (n >= 1e6) return (n/1e6).toFixed(2)+'M';
+  if (n >= 1e3) return (n/1e3).toFixed(0)+'K';
+  return n;
+}
+function fmtMktCap(n) {
+  if (!n) return '—';
+  if (n >= 1e12) return '$'+(n/1e12).toFixed(2)+'T';
+  if (n >= 1e9)  return '$'+(n/1e9).toFixed(2)+'B';
+  if (n >= 1e6)  return '$'+(n/1e6).toFixed(2)+'M';
+  return '$'+n;
+}
+
+async function fetchQuotes() {
+  const syms = LIVE_SYMBOLS.map(s => s.sym).join(',');
+  try {
+    const res  = await fetch(`${TD_BASE}/quote?symbol=${syms}&apikey=${TD_KEY}`);
+    const data = await res.json();
+    LIVE_SYMBOLS.forEach(s => {
+      const q = Array.isArray(data) ? data.find(d=>d.symbol===s.sym) : data[s.sym] || (data.symbol===s.sym ? data : null);
+      if (q && !q.status) liveCardData[s.sym] = q;
+    });
+    buildLiveCards();
+    if (liveCardData[liveSymbol]) updateStatsBar(liveCardData[liveSymbol]);
+  } catch(e) { console.warn('Quote fetch error', e); }
+}
+
+function buildLiveCards() {
+  const container = document.getElementById('live-cards');
+  if (!container) return;
+  container.innerHTML = LIVE_SYMBOLS.map(s => {
+    const q   = liveCardData[s.sym];
+    const price = q ? fmtPrice(q.close || q.price) : '—';
+    const chg   = q ? parseFloat(q.percent_change||0) : 0;
+    const chgStr= q ? (chg>=0?'+':'')+chg.toFixed(2)+'%' : '—';
+    const cls   = chg >= 0 ? 'up' : 'down';
+    const active= s.sym === liveSymbol ? 'active' : '';
+    return `
+      <div class="live-card ${active}" onclick="switchSymbol('${s.sym}')">
+        <div class="live-card-sym">${s.sym}</div>
+        <div class="live-card-name">${s.name}</div>
+        <div class="live-card-price">${price}</div>
+        <div class="live-card-chg ${cls}">${chgStr}</div>
+      </div>`;
+  }).join('');
+}
+
+function buildSymbolTabs() {
+  const el = document.getElementById('live-symbol-tabs');
+  if (!el) return;
+  el.innerHTML = LIVE_SYMBOLS.map(s => `
+    <button class="live-sym-btn ${s.sym===liveSymbol?'active':''}" onclick="switchSymbol('${s.sym}')">${s.sym}</button>
+  `).join('');
+}
+
+async function switchSymbol(sym) {
+  liveSymbol = sym;
+  buildLiveCards();
+  buildSymbolTabs();
+  if (liveCardData[sym]) updateStatsBar(liveCardData[sym]);
+  await fetchAndDrawChart();
+}
+
+function setLiveRange(range) {
+  liveRange = range;
+  document.querySelectorAll('.live-range-btn').forEach(b => {
+    const map = {'1day':'1D','5day':'5D','1month':'1M','3month':'3M','6month':'6M','1year':'1Y','5year':'5Y'};
+    b.classList.toggle('active', b.textContent === map[range]);
+  });
+  fetchAndDrawChart();
+}
+
+function setChartType(type) {
+  liveChartType = type;
+  document.getElementById('chart-type-line').classList.toggle('active', type==='line');
+  document.getElementById('chart-type-candle').classList.toggle('active', type==='candle');
+  fetchAndDrawChart();
+}
+
+function rangeToInterval(range) {
+  const map = { '1day':'5min', '5day':'30min', '1month':'1day', '3month':'1day', '6month':'1week', '1year':'1week', '5year':'1month' };
+  return map[range] || '1day';
+}
+function rangeToOutputSize(range) {
+  const map = { '1day':78, '5day':80, '1month':31, '3month':90, '6month':26, '1year':52, '5year':60 };
+  return map[range] || 30;
+}
+
+async function fetchAndDrawChart() {
+  const chartEl = document.getElementById('liveChart');
+  if (!chartEl) return;
+
+  // Show spinner
+  const wrap = chartEl.parentElement;
+  wrap.style.position = 'relative';
+  let spinner = document.getElementById('live-spin-overlay');
+  if (!spinner) {
+    spinner = document.createElement('div');
+    spinner.id = 'live-spin-overlay';
+    spinner.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,14,26,.6);z-index:10;border-radius:8px;';
+    spinner.innerHTML = '<div class="live-spinner"></div>';
+    wrap.appendChild(spinner);
+  }
+  spinner.style.display = 'flex';
+
+  const interval   = rangeToInterval(liveRange);
+  const outputSize = rangeToOutputSize(liveRange);
+  const sym        = LIVE_SYMBOLS.find(s=>s.sym===liveSymbol);
+
+  try {
+    const url  = `${TD_BASE}/time_series?symbol=${liveSymbol}&interval=${interval}&outputsize=${outputSize}&apikey=${TD_KEY}`;
+    const res  = await fetch(url);
+    const data = await res.json();
+
+    if (data.status === 'error' || !data.values) {
+      spinner.style.display = 'none';
+      showToast('Could not load data for ' + liveSymbol + '. API limit may be reached.', 'error');
+      return;
+    }
+
+    const values = [...data.values].reverse();
+    const labels = values.map(v => {
+      const d = new Date(v.datetime);
+      if (interval.includes('min') || interval.includes('hour')) {
+        return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+      }
+      return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:interval==='1month'?'2-digit':undefined});
+    });
+
+    const closes = values.map(v => parseFloat(v.close));
+    const opens  = values.map(v => parseFloat(v.open));
+    const highs  = values.map(v => parseFloat(v.high));
+    const lows   = values.map(v => parseFloat(v.low));
+    const vols   = values.map(v => parseInt(v.volume||0));
+
+    // Update price display
+    const lastClose = closes[closes.length-1];
+    const firstClose= closes[0];
+    const chgAmt    = lastClose - firstClose;
+    const chgPct    = (chgAmt / firstClose * 100);
+    const priceEl   = document.getElementById('live-current-price');
+    const chgEl     = document.getElementById('live-price-change');
+    if (priceEl) priceEl.textContent = fmtPrice(lastClose);
+    if (chgEl) {
+      chgEl.textContent = (chgAmt>=0?'+':'')+fmtPrice(chgAmt)+' ('+( chgPct>=0?'+':'')+chgPct.toFixed(2)+'%)';
+      chgEl.className = chgAmt >= 0 ? 'up' : 'down';
+    }
+
+    // OHLC display
+    const ohlcEl = document.getElementById('live-ohlc');
+    if (ohlcEl) {
+      const last = values[values.length-1];
+      ohlcEl.innerHTML = `
+        <span>O: <strong>${fmtPrice(last.open)}</strong></span>
+        <span>H: <strong style="color:var(--green)">${fmtPrice(last.high)}</strong></span>
+        <span>L: <strong style="color:var(--red)">${fmtPrice(last.low)}</strong></span>
+        <span>C: <strong>${fmtPrice(last.close)}</strong></span>`;
+    }
+
+    // Draw chart
+    if (liveChart) liveChart.destroy();
+    const ctx = chartEl.getContext('2d');
+    const lineColor = chgAmt >= 0 ? '#00d17a' : '#ff5252';
+
+    if (liveChartType === 'line') {
+      liveChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: liveSymbol,
+            data: closes,
+            borderColor: lineColor,
+            borderWidth: 1.5,
+            pointRadius: 0,
+            fill: true,
+            backgroundColor: lineColor + '12',
+            tension: 0.2,
+          }]
+        },
+        options: chartOptions('$', fmtPrice)
+      });
+    } else {
+      // Candlestick via bar chart simulation
+      const barData = values.map((v,i) => ({
+        x: labels[i],
+        o: parseFloat(v.open),
+        h: parseFloat(v.high),
+        l: parseFloat(v.low),
+        c: parseFloat(v.close),
+      }));
+      const barColors = barData.map(d => d.c >= d.o ? '#00d17a' : '#ff5252');
+      liveChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Price Range',
+              data: barData.map(d => [d.l, d.h]),
+              backgroundColor: barColors.map(c => c+'55'),
+              borderColor: barColors,
+              borderWidth: 1,
+              borderSkipped: false,
+              barPercentage: 0.3,
+            },
+            {
+              label: 'Open/Close',
+              data: barData.map(d => [Math.min(d.o,d.c), Math.max(d.o,d.c)]),
+              backgroundColor: barColors,
+              borderColor: barColors,
+              borderWidth: 1,
+              borderSkipped: false,
+              barPercentage: 0.6,
+            }
+          ]
+        },
+        options: chartOptions('$', fmtPrice)
+      });
+    }
+
+    spinner.style.display = 'none';
+    document.getElementById('live-last-updated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+    startRefreshCountdown();
+
+  } catch(e) {
+    spinner.style.display = 'none';
+    showToast('Network error loading chart data.', 'error');
+    console.error(e);
+  }
+}
+
+function chartOptions(prefix, fmtFn) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 250 },
+    interaction: { mode:'index', intersect:false },
+    plugins: {
+      legend: { display:false },
+      tooltip: {
+        backgroundColor:'#1a2235', borderColor:'#2a3652', borderWidth:1,
+        titleColor:'#e8edf5', bodyColor:'#8b9dbf', padding:10,
+        callbacks: {
+          label: item => {
+            const v = item.raw;
+            if (Array.isArray(v)) return ` ${item.dataset.label}: ${fmtFn(v[0])} – ${fmtFn(v[1])}`;
+            return ` ${fmtFn(v)}`;
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { color:'rgba(42,54,82,0.35)' },
+        ticks: { color:'#5a6b8a', font:{ size:10, family:"'DM Mono',monospace" }, maxTicksLimit:10 }
+      },
+      y: {
+        grid: { color:'rgba(42,54,82,0.35)' },
+        ticks: {
+          color:'#5a6b8a', font:{ size:10, family:"'DM Mono',monospace" },
+          callback: v => '$'+v.toLocaleString()
+        }
+      }
+    }
+  };
+}
+
+function updateStatsBar(q) {
+  const set = (id, val) => { const el=document.getElementById(id); if(el) el.textContent=val; };
+  set('stat-52h',  fmtPrice(q.fifty_two_week?.high || q.high));
+  set('stat-52l',  fmtPrice(q.fifty_two_week?.low  || q.low));
+  set('stat-open', fmtPrice(q.open));
+  set('stat-prev', fmtPrice(q.previous_close || q.close));
+  set('stat-range',`${fmtPrice(q.low)} – ${fmtPrice(q.high)}`);
+  set('stat-vol',  fmtVol(q.volume));
+  set('stat-avgvol', fmtVol(q.average_volume));
+  set('stat-mktcap', fmtMktCap(q.market_cap));
+}
+
+function startRefreshCountdown() {
+  if (liveCountdown) clearInterval(liveCountdown);
+  if (liveRefreshTimer) clearTimeout(liveRefreshTimer);
+  const refreshIn = isMarketOpen() ? 300 : 600; // 5min open, 10min closed
+  liveCountdownVal = refreshIn;
+  const countEl = document.getElementById('live-refresh-countdown');
+  liveCountdown = setInterval(() => {
+    liveCountdownVal--;
+    if (countEl) {
+      const m = Math.floor(liveCountdownVal/60), s = liveCountdownVal%60;
+      countEl.textContent = `Refresh in ${m}:${s.toString().padStart(2,'0')}`;
+    }
+    if (liveCountdownVal <= 0) {
+      clearInterval(liveCountdown);
+      fetchQuotes();
+      fetchAndDrawChart();
+    }
+  }, 1000);
+}
+
+async function initLive() {
+  if (liveInitialized) return;
+  liveInitialized = true;
+  buildSymbolTabs();
+  buildLiveCards();
+  updateMarketStatus();
+  await fetchQuotes();
+  await fetchAndDrawChart();
+  setInterval(updateMarketStatus, 60000);
 }
 
 // ══════════════════════════════════════════════
