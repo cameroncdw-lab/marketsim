@@ -443,11 +443,28 @@
     <div class="chart-area">
       <div class="chart-header">
         <div class="chart-title">Historical Index Performance</div>
-        <div class="chart-controls" id="range-controls">
-          <button class="ctrl-btn" onclick="setRange(10)">10Y</button>
-          <button class="ctrl-btn" onclick="setRange(25)">25Y</button>
-          <button class="ctrl-btn" onclick="setRange(50)">50Y</button>
-          <button class="ctrl-btn active" onclick="setRange(100)">ALL</button>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text2);">
+            <span>Start $</span>
+            <input id="chart-invest" type="number" value="10000" min="100" step="1000"
+              style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:4px 8px;color:var(--text);font-size:12px;font-family:var(--font-mono);width:90px;outline:none;"
+              oninput="buildMainChart()" />
+          </div>
+        </div>
+      </div>
+      <div class="chart-controls" id="range-controls" style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
+        <button class="ctrl-btn" onclick="setRange(1)">1Y</button>
+        <button class="ctrl-btn" onclick="setRange(3)">3Y</button>
+        <button class="ctrl-btn" onclick="setRange(5)">5Y</button>
+        <button class="ctrl-btn" onclick="setRange(10)">10Y</button>
+        <button class="ctrl-btn" onclick="setRange(25)">25Y</button>
+        <button class="ctrl-btn" onclick="setRange(50)">50Y</button>
+        <button class="ctrl-btn active" onclick="setRange(100)">ALL</button>
+        <div style="display:flex;align-items:center;gap:7px;margin-left:6px;flex:1;min-width:140px;">
+          <input type="range" id="range-slider" min="1" max="100" value="100" step="1"
+            style="flex:1;accent-color:var(--blue);cursor:pointer;"
+            oninput="onSlider(this.value)" />
+          <span id="slider-label" style="font-size:11px;font-family:var(--font-mono);color:var(--text2);min-width:32px;">100Y</span>
         </div>
       </div>
       <div class="chart-legend" id="chart-legend"></div>
@@ -937,23 +954,41 @@ function toggleSeries(key) {
 //  MAIN CHART
 // ══════════════════════════════════════════════
 
-function setRange(years) {
-  currentRange = years;
-  document.querySelectorAll('#range-controls .ctrl-btn').forEach((b, i) => {
-    b.classList.toggle('active', [10, 25, 50, 100][i] === years);
+const PRESET_RANGES = [1, 3, 5, 10, 25, 50, 100];
+
+function onSlider(val) {
+  val = parseInt(val);
+  document.getElementById('slider-label').textContent = val + 'Y';
+  currentRange = val;
+  // deactivate preset buttons if not a preset
+  document.querySelectorAll('#range-controls .ctrl-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.textContent) === val || (b.textContent === 'ALL' && val === 100));
   });
   buildMainChart();
 }
 
+function setRange(years) {
+  currentRange = years;
+  document.querySelectorAll('#range-controls .ctrl-btn').forEach(b => {
+    const label = b.textContent.replace('Y','');
+    b.classList.toggle('active', (label === 'ALL' && years === 100) || parseInt(label) === years);
+  });
+  const slider = document.getElementById('range-slider');
+  if (slider) { slider.value = years; document.getElementById('slider-label').textContent = years + 'Y'; }
+  buildMainChart();
+}
+
 function buildMainChart() {
+  const invest   = parseFloat(document.getElementById('chart-invest')?.value) || 10000;
   const startIdx = Math.max(0, YEARS.length - currentRange);
-  const labels = YEARS.slice(startIdx);
+  const labels   = YEARS.slice(startIdx);
+
   const datasets = Object.entries(FUNDS).map(([k, f]) => {
     const raw  = INDEX_DATA[k].slice(startIdx);
     const base = raw[0];
     return {
       label: f.name,
-      data: raw.map(v => Math.round(v / base * 1000) / 10),
+      data: raw.map(v => Math.round(v / base * invest)),
       borderColor: f.color,
       borderWidth: 1.5,
       pointRadius: 0,
@@ -972,7 +1007,7 @@ function buildMainChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      animation: { duration: 350 },
+      animation: { duration: 300 },
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
@@ -985,7 +1020,11 @@ function buildMainChart() {
           padding: 12,
           callbacks: {
             title: items => `Year: ${items[0].label}`,
-            label: item => ` ${item.dataset.label}: ${item.raw.toFixed(1)}x`,
+            label: item => {
+              const gain = item.raw - invest;
+              const pct  = ((item.raw - invest) / invest * 100).toFixed(1);
+              return ` ${item.dataset.label}: $${item.raw.toLocaleString()} (${gain >= 0 ? '+' : ''}${pct}%)`;
+            },
           }
         }
       },
@@ -997,10 +1036,20 @@ function buildMainChart() {
         y: {
           grid: { color: 'rgba(42,54,82,0.4)' },
           ticks: {
-            color: '#5a6b8a', font: { size: 11, family: "'DM Mono', monospace" },
-            callback: v => v + 'x'
+            color: '#5a6b8a',
+            font: { size: 11, family: "'DM Mono', monospace" },
+            callback: v => {
+              if (v >= 1000000) return '$' + (v / 1000000).toFixed(1) + 'M';
+              if (v >= 1000)    return '$' + (v / 1000).toFixed(0) + 'K';
+              return '$' + v;
+            }
           },
-          title: { display: true, text: 'Normalized return (1.0x = break even)', color: '#5a6b8a', font: { size: 10 } }
+          title: {
+            display: true,
+            text: `Value of $${(parseFloat(document.getElementById('chart-invest')?.value)||10000).toLocaleString()} invested`,
+            color: '#5a6b8a',
+            font: { size: 10 }
+          }
         }
       }
     }
