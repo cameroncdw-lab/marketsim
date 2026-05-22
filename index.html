@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MarketSim — Historical Portfolio Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --surface2: #1a2235;
+    --surface3: #212d42;
+    --border: #2a3652;
+    --border2: #374869;
+    --text: #e8edf5;
+    --text2: #8b9dbf;
+    --text3: #5a6b8a;
+    --green: #00d17a;
+    --green2: #00a85f;
+    --red: #ff5252;
+    --red2: #cc3c3c;
+    --blue: #4a9eff;
+    --gold: #f5a623;
+    --purple: #a78bfa;
+    --font-main: 'Outfit', sans-serif;
+    --font-display: 'DM Serif Display', serif;
+    --font-mono: 'DM Mono', monospace;
+    --nav-h: 57px;
+    --ticker-h: 50px;
+  }
+
+  html, body { height: 100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-main);
+    font-size: 14px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── NAV ── */
+  .nav {
+    height: var(--nav-h);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .nav-logo { font-family: var(--font-display); font-size: 22px; color: var(--text); letter-spacing: .5px; }
+  .nav-logo span { color: var(--green); }
+  .nav-tabs { display: flex; gap: 4px; }
+  .nav-tab {
+    padding: 6px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text2);
+    border: 1px solid transparent;
+    background: transparent;
+    font-family: var(--font-main);
+    transition: .15s;
+  }
+  .nav-tab.active { background: var(--surface2); color: var(--text); border-color: var(--border); }
+  .nav-tab:hover:not(.active) { color: var(--text); }
+  .nav-cash { font-size: 13px; color: var(--text2); }
+  .nav-cash strong { color: var(--green); font-family: var(--font-mono); font-size: 14px; }
+
+  /* ── TICKER BAR ── */
+  .ticker-bar {
+    height: var(--ticker-h);
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    padding: 0 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    flex-shrink: 0;
+    scrollbar-width: none;
+  }
+  .ticker-bar::-webkit-scrollbar { display: none; }
+  .ticker-item { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .ticker-sym { font-size: 12px; color: var(--text3); font-family: var(--font-mono); }
+  .ticker-price { font-size: 14px; font-family: var(--font-mono); font-weight: 500; }
+  .ticker-chg { font-size: 12px; font-family: var(--font-mono); }
+  .ticker-divider { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
+  .up { color: var(--green); }
+  .down { color: var(--red); }
+  .neutral { color: var(--text2); }
+
+  /* ── PANELS ── */
+  .panel { display: none; flex: 1; overflow: hidden; }
+  .panel.active { display: flex; flex-direction: column; }
+
+  /* ── MARKET PANEL ── */
+  .market-layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .chart-area {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 20px 24px;
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  /* Chart header */
+  .chart-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .chart-title { font-family: var(--font-display); font-size: 20px; }
+  .chart-controls { display: flex; gap: 5px; }
+  .ctrl-btn {
+    padding: 5px 13px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text2);
+    font-family: var(--font-mono);
+    transition: .15s;
+  }
+  .ctrl-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .ctrl-btn:hover:not(.active) { border-color: var(--border2); color: var(--text); }
+
+  /* Legend */
+  .chart-legend { display: flex; gap: 12px; flex-wrap: wrap; }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text2);
+    cursor: pointer;
+    padding: 3px 6px;
+    border-radius: 4px;
+    transition: .1s;
+  }
+  .legend-item:hover { background: var(--surface2); }
+  .legend-item.muted { opacity: .3; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .legend-er { font-size: 10px; color: var(--text3); font-family: var(--font-mono); }
+
+  /* Chart container */
+  .chart-wrap { position: relative; flex: 1; min-height: 280px; height: 280px; }
+
+  /* ── SIDEBAR ── */
+  .sb-section { border-bottom: 1px solid var(--border); padding: 16px; }
+  .sb-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--text3);
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+
+  /* Portfolio stats */
+  .port-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .port-stat { background: var(--surface2); border-radius: 7px; padding: 10px 12px; }
+  .port-stat-label { font-size: 10px; color: var(--text3); margin-bottom: 3px; }
+  .port-stat-val { font-size: 17px; font-family: var(--font-mono); font-weight: 500; line-height: 1.2; }
+
+  /* Holdings */
+  .holdings-table { width: 100%; border-collapse: collapse; }
+  .holdings-table th {
+    font-size: 10px;
+    color: var(--text3);
+    text-align: left;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+  .holdings-table td { padding: 7px 0; font-size: 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .holdings-table tr:last-child td { border-bottom: none; }
+  .ticker-badge {
+    background: var(--surface3);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--blue);
+    display: inline-block;
+  }
+  .year-range { font-size: 10px; color: var(--text3); margin-top: 2px; }
+  .gain-chip {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    white-space: nowrap;
+  }
+  .gain-chip.pos { background: #00d17a14; color: var(--green); }
+  .gain-chip.neg { background: #ff525214; color: var(--red); }
+
+  /* Trade form */
+  .trade-form { display: flex; flex-direction: column; gap: 9px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; }
+  .form-input, .form-select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 10px;
+    color: var(--text);
+    font-size: 13px;
+    font-family: var(--font-mono);
+    width: 100%;
+    outline: none;
+    transition: .15s;
+  }
+  .form-select { font-family: var(--font-main); cursor: pointer; appearance: none; }
+  .form-input:focus, .form-select:focus { border-color: var(--blue); }
+  .form-input::placeholder { color: var(--text3); }
+  .expense-note {
+    background: #f5a62310;
+    border: 1px solid #f5a62328;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 11px;
+    color: var(--gold);
+    line-height: 1.5;
+  }
+  .trade-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .trade-btn {
+    padding: 9px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: var(--font-main);
+    font-weight: 500;
+    border: none;
+    transition: .15s;
+  }
+  .buy-btn { background: var(--green); color: #021a0e; }
+  .sell-btn { background: var(--red); color: #fff; }
+  .trade-btn:hover { opacity: .85; }
+  .trade-btn:active { transform: scale(.98); }
+
+  /* Events */
+  .events-list { display: flex; flex-direction: column; gap: 2px; }
+  .event-item {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 5px;
+    transition: .1s;
+  }
+  .event-item:hover { background: var(--surface2); }
+  .event-year { font-family: var(--font-mono); font-size: 11px; color: var(--gold); min-width: 32px; margin-top: 1px; flex-shrink: 0; }
+  .event-desc { font-size: 12px; color: var(--text2); line-height: 1.4; flex: 1; }
+  .event-chg { font-size: 11px; font-family: var(--font-mono); flex-shrink: 0; }
+
+  /* ── PERFORMANCE PANEL ── */
+  .perf-layout { display: flex; flex-direction: column; overflow-y: auto; flex: 1; }
+  .perf-header { padding: 24px 28px 20px; border-bottom: 1px solid var(--border); }
+  .perf-header h2 { font-family: var(--font-display); font-size: 26px; margin-bottom: 4px; }
+  .perf-header p { font-size: 13px; color: var(--text2); }
+
+  .perf-big-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+  }
+  .perf-stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .perf-stat-label { font-size: 11px; color: var(--text3); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .06em; }
+  .perf-stat-val { font-size: 22px; font-family: var(--font-mono); font-weight: 500; line-height: 1.2; }
+  .perf-stat-sub { font-size: 11px; color: var(--text3); margin-top: 4px; }
+
+  .perf-mid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 20px 28px; }
+  .compare-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .compare-card h4 { font-size: 12px; color: var(--text2); margin-bottom: 12px; text-transform: uppercase; letter-spacing: .06em; }
+
+  .compare-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .compare-bar-label { font-size: 12px; color: var(--text2); width: 85px; flex-shrink: 0; }
+  .compare-bar-track { flex: 1; height: 7px; background: var(--surface3); border-radius: 4px; overflow: hidden; }
+  .compare-bar-fill { height: 100%; border-radius: 4px; transition: width .6s ease; }
+  .compare-bar-val { font-size: 12px; font-family: var(--font-mono); width: 55px; text-align: right; }
+
+  .trade-log-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .trade-log-item:last-child { border-bottom: none; }
+
+  .perf-chart-area { padding: 0 28px 28px; }
+  .perf-chart-wrap { position: relative; height: 260px; }
+
+  /* ── LEARN PANEL ── */
+  .learn-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; padding: 24px 28px; overflow-y: auto; flex: 1; align-content: start; }
+  .learn-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+  .learn-card h3 { font-family: var(--font-display); font-size: 18px; color: var(--text); }
+  .learn-card p { font-size: 13px; color: var(--text2); line-height: 1.65; }
+  .learn-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-weight: 500;
+    letter-spacing: .04em;
+  }
+  .badge-gold { background: #f5a62320; color: var(--gold); }
+  .badge-blue { background: #4a9eff20; color: var(--blue); }
+  .badge-green { background: #00d17a20; color: var(--green); }
+  .badge-purple { background: #a78bfa20; color: var(--purple); }
+  .learn-stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .learn-stat-row:last-child { border-bottom: none; }
+  .learn-stat-label { color: var(--text2); }
+  .learn-stat-val { font-family: var(--font-mono); font-weight: 500; }
+  .crash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+  .crash-item { background: var(--surface2); border-radius: 8px; padding: 12px; }
+  .crash-item-title { font-size: 11px; color: var(--text3); margin-bottom: 5px; }
+  .crash-item-loss { font-size: 13px; font-weight: 600; color: var(--red); margin-bottom: 2px; }
+  .crash-item-rec { font-size: 11px; color: var(--text3); }
+
+  /* ── TOAST / ALERT ── */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--surface3);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 12px 18px;
+    font-size: 13px;
+    z-index: 9999;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: .3s;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.success { border-color: var(--green2); color: var(--green); }
+  .toast.error { border-color: var(--red2); color: var(--red); }
+  .toast.info { border-color: var(--blue); color: var(--blue); }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 900px) {
+    .market-layout { grid-template-columns: 1fr; overflow-y: auto; }
+    .chart-area { border-right: none; border-bottom: 1px solid var(--border); }
+    .perf-big-stats { grid-template-columns: 1fr 1fr; }
+    .perf-mid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 600px) {
+    .nav-tabs { display: none; }
+    .mobile-tabs {
+      display: flex !important;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .mobile-tab {
+      flex: 1;
+      text-align: center;
+      padding: 10px;
+      font-size: 13px;
+      color: var(--text2);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+    .mobile-tab.active { color: var(--text); border-bottom-color: var(--blue); }
+  }
+  .mobile-tabs { display: none; }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav">
+  <div class="nav-logo">Market<span>Sim</span></div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showPanel('market')">📈 Market</button>
+    <button class="nav-tab" onclick="showPanel('performance')">📊 Performance</button>
+    <button class="nav-tab" onclick="showPanel('learn')">📚 Learn</button>
+  </div>
+  <div class="nav-cash">Cash: <strong id="cash-display">$10,000.00</strong></div>
+</nav>
+
+<!-- MOBILE TABS -->
+<div class="mobile-tabs">
+  <div class="mobile-tab active" onclick="showPanel('market')">Market</div>
+  <div class="mobile-tab" onclick="showPanel('performance')">Performance</div>
+  <div class="mobile-tab" onclick="showPanel('learn')">Learn</div>
+</div>
+
+<!-- TICKER BAR -->
+<div class="ticker-bar" id="ticker-bar"></div>
+
+<!-- ══════════════ MARKET PANEL ══════════════ -->
+<div class="panel active" id="panel-market">
+  <div class="market-layout">
+
+    <!-- LEFT: Chart -->
+    <div class="chart-area">
+      <div class="chart-header">
+        <div class="chart-title">Historical Index Performance</div>
+        <div class="chart-controls" id="range-controls">
+          <button class="ctrl-btn" onclick="setRange(10)">10Y</button>
+          <button class="ctrl-btn" onclick="setRange(25)">25Y</button>
+          <button class="ctrl-btn" onclick="setRange(50)">50Y</button>
+          <button class="ctrl-btn active" onclick="setRange(100)">ALL</button>
+        </div>
+      </div>
+      <div class="chart-legend" id="chart-legend"></div>
+      <div class="chart-wrap">
+        <canvas id="mainChart" role="img" aria-label="Historical stock market index performance chart from 1924 to 2024">
+          Historical index performance — S&amp;P 500, NASDAQ, DJIA, US Bonds, Gold from 1924 to 2024.
+        </canvas>
+      </div>
+
+      <!-- Market Events panel below chart on desktop -->
+      <div style="margin-top: 8px;">
+        <div class="sb-label">Key Market Events — click to highlight on chart</div>
+        <div class="events-list" id="events-list-main" style="max-height: 180px; overflow-y: auto;"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Sidebar -->
+    <div class="sidebar">
+
+      <!-- Portfolio Summary -->
+      <div class="sb-section">
+        <div class="sb-label">My Portfolio</div>
+        <div class="port-stats">
+          <div class="port-stat">
+            <div class="port-stat-label">Total Value</div>
+            <div class="port-stat-val" id="port-total">$10,000</div>
+          </div>
+          <div class="port-stat">
+            <div class="port-stat-label">Total Return</div>
+            <div class="port-stat-val neutral" id="port-return">+$0</div>
+          </div>
+          <div class="port-stat">
+            <div class="port-stat-label">Return %</div>
+            <div class="port-stat-val neutral" id="port-pct">0.00%</div>
+          </div>
+          <div class="port-stat">
+            <div class="port-stat-label">Open Positions</div>
+            <div class="port-stat-val" id="port-positions">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Holdings -->
+      <div class="sb-section">
+        <div class="sb-label">Holdings</div>
+        <table class="holdings-table">
+          <thead>
+            <tr>
+              <th>Security</th>
+              <th>Invested</th>
+              <th>Value</th>
+              <th>Return</th>
+            </tr>
+          </thead>
+          <tbody id="holdings-body">
+            <tr>
+              <td colspan="4" style="color:var(--text3);font-size:12px;padding:14px 0;text-align:center;">
+                No positions yet — place a trade below
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Trade Form -->
+      <div class="sb-section">
+        <div class="sb-label">Place Trade (Simulated)</div>
+        <div class="trade-form">
+          <div class="form-row">
+            <div class="form-group">
+              <div class="form-label">Security</div>
+              <select class="form-select" id="trade-ticker" onchange="updateExpenseInfo()">
+                <option value="SP500">S&amp;P 500 Index</option>
+                <option value="NASDAQ">NASDAQ Composite</option>
+                <option value="DJIA">Dow Jones (DJIA)</option>
+                <option value="BONDS">US 10-Yr Bonds</option>
+                <option value="GOLD">Gold</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <div class="form-label">Buy Year</div>
+              <input class="form-input" type="number" id="trade-year" value="1990" min="1924" max="2023" oninput="updateExpenseInfo()" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <div class="form-label">Amount ($)</div>
+              <input class="form-input" type="number" id="trade-amount" value="1000" min="100" step="100" />
+            </div>
+            <div class="form-group">
+              <div class="form-label">Sell Year</div>
+              <input class="form-input" type="number" id="trade-sell" value="2024" min="1925" max="2024" oninput="updateExpenseInfo()" />
+            </div>
+          </div>
+          <div id="expense-info" class="expense-note">Loading fund info...</div>
+          <div class="trade-btns">
+            <button class="trade-btn buy-btn" onclick="executeTrade('buy')">Buy</button>
+            <button class="trade-btn sell-btn" onclick="executeTrade('sell')">Sell Selected</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reset -->
+      <div class="sb-section">
+        <button class="trade-btn" style="width:100%;background:var(--surface2);color:var(--text2);border:1px solid var(--border)" onclick="resetPortfolio()">
+          Reset Portfolio
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ PERFORMANCE PANEL ══════════════ -->
+<div class="panel" id="panel-performance">
+  <div class="perf-layout">
+    <div class="perf-header">
+      <h2>Portfolio Performance</h2>
+      <p>Your simulated returns compared to historical market benchmarks</p>
+    </div>
+    <div class="perf-big-stats" id="perf-stats">
+      <div class="perf-stat"><div class="perf-stat-label">Total Invested</div><div class="perf-stat-val">—</div></div>
+      <div class="perf-stat"><div class="perf-stat-label">Portfolio Value</div><div class="perf-stat-val">—</div></div>
+      <div class="perf-stat"><div class="perf-stat-label">Total Return</div><div class="perf-stat-val">—</div></div>
+      <div class="perf-stat"><div class="perf-stat-label">Annualized Return</div><div class="perf-stat-val">—</div></div>
+    </div>
+    <div class="perf-mid">
+      <div class="compare-card">
+        <h4>Your Portfolio vs Benchmarks (Annualized)</h4>
+        <div id="benchmark-bars">
+          <div style="font-size:12px;color:var(--text3)">Place trades to see comparisons</div>
+        </div>
+      </div>
+      <div class="compare-card">
+        <h4>Trade Log</h4>
+        <div id="trade-history" style="display:flex;flex-direction:column;">
+          <div style="font-size:12px;color:var(--text3)">No trades yet</div>
+        </div>
+      </div>
+    </div>
+    <div class="perf-chart-area">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">S&amp;P 500 vs US Bonds — Last 50 Years (normalized)</div>
+      <div class="perf-chart-wrap">
+        <canvas id="perfChart" role="img" aria-label="S&P 500 vs US Bonds performance over the last 50 years">
+          Performance comparison chart.
+        </canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ LEARN PANEL ══════════════ -->
+<div class="panel" id="panel-learn">
+  <div class="learn-layout">
+
+    <div class="learn-card">
+      <div><span class="learn-badge badge-gold">Fundamentals</span></div>
+      <h3>Expense Ratios</h3>
+      <p>A fund's annual fee charged as a percentage of your assets. Even small differences compound dramatically over decades — this is one of the most important numbers for long-term investors.</p>
+      <div>
+        <div class="learn-stat-row"><span class="learn-stat-label">Fidelity 500 Index (FXAIX)</span><span class="learn-stat-val" style="color:var(--green)">0.015%</span></div>
+        <div class="learn-stat-row"><span class="learn-stat-label">Vanguard S&amp;P 500 (VOO)</span><span class="learn-stat-val" style="color:var(--green)">0.03%</span></div>
+        <div class="learn-stat-row"><span class="learn-stat-label">iShares Core S&amp;P 500 (IVV)</span><span class="learn-stat-val" style="color:var(--green)">0.03%</span></div>
+        <div class="learn-stat-row"><span class="learn-stat-label">Typical Actively Managed Fund</span><span class="learn-stat-val" style="color:var(--gold)">0.50–0.75%</span></div>
+        <div class="learn-stat-row"><span class="learn-stat-label">High-Cost Active / Hedge</span><span class="learn-stat-val" style="color:var(--red)">1.0–2.0%</span></div>
+      </div>
+      <p style="font-size:11px;color:var(--text3)">
+        Example: $10,000 invested for 30 years at 7% return.<br>
+        At 0.03% ER → <strong style="color:var(--green)">$74,872</strong><br>
+        At 1.50% ER → <strong style="color:var(--red)">$57,435</strong><br>
+        Difference: <strong style="color:var(--gold)">$17,437 lost to fees</strong>
+      </p>
+    </div>
+
+    <div class="learn-card">
+      <div><span class="learn-badge badge-blue">Strategy</span></div>
+      <h3>Dollar-Cost Averaging</h3>
+      <p>Invest a fixed amount at regular intervals regardless of market price. This reduces the risk of investing a lump sum at the wrong time and removes emotion from the decision.</p>
+      <div>
+        <div class="learn-stat-row"><span class="learn-stat-label">S&amp;P 500 avg annual return (1924–2024)</span><span class="learn-stat-val" style="color:var(--green)">+10.5%</span></div>
+        <div class="learn-stat-row"><span class="learn-stat-label">Worst rolling 10-yr period</span><span class="learn-stat-val" style="color:var(--red)">2000–2009: −0.95%</span></div>
+        <div class="learn-stat-row"><span class="learn-stat-label">Best rolling 10-yr period</span><span class="learn-stat-val" style="color:var(--green)">1990–1999: +18.2%</span></div>
+        <div class="learn-stat-row"><span class="learn-stat-label">% of rolling 10-yr windows positive</span><span class="learn-stat-val">~94%</span></div>
+        <div class="learn-stat-row"><span class="learn-stat-label">% of rolling 20-yr windows positive</span><span class="learn-stat-val">100%</span></div>
+      </div>
+      <p style="font-size:11px;color:var(--text3)">Time in the market beats timing the market — staying invested through volatility is more important than finding the "perfect" entry point.</p>
+    </div>
+
+    <div class="learn-card">
+      <div><span class="learn-badge badge-green">Behavior</span></div>
+      <h3>Time In Market vs. Timing</h3>
+      <p>The stock market's best days often happen during periods of volatility. Missing just a handful of the best days can cut your returns dramatically.</p>
+      <div>
+        <div class="learn-stat-row"><span class="learn-stat-label">Fully invested $10k (20 years)</span><span class="learn-stat-val" style="color:var(--green)">~$67,275</span></div>
+        <div class="learn-stat-row"><span class="learn-stat-label">Missed best 10 days</span><span class="learn-stat-val" style="color:var(--gold)">~$30,896 (−54%)</span></div>
+        <div class="learn-stat-row"><span class="learn-stat-label">Missed best 20 days</span><span class="learn-stat-val" style="color:var(--red)">~$17,410 (−74%)</span></div>
+        <div class="learn-stat-row"><span class="learn-stat-label">Missed best 30 days</span><span class="learn-stat-val" style="color:var(--red)">~$10,245 (−85%)</span></div>
+      </div>
+      <p style="font-size:11px;color:var(--text3)">7 of the best 10 single days historically occurred within 2 weeks of the 10 worst days. Panic selling costs returns.</p>
+    </div>
+
+    <div class="learn-card">
+      <div><span class="learn-badge badge-purple">Diversification</span></div>
+      <h3>Asset Correlation</h3>
+      <p>Different asset classes don't always move in the same direction. Mixing them can reduce your overall portfolio volatility while maintaining returns.</p>
+      <div>
+        <div class="learn-stat-row"><span class="learn-stat-label">Stocks vs Bonds</span><span class="learn-stat-val">Low / Negative</span></div>
+        <div class="learn-stat-row"><span class="learn-stat-label">US vs International Stocks</span><span class="learn-stat-val">Moderate (0.6–0.8)</span></div>
+        <div class="learn-stat-row"><span class="learn-stat-label">Stocks vs Gold</span><span class="learn-stat-val">Very Low (~0.1)</span></div>
+        <div class="learn-stat-row"><span class="learn-stat-label">Large Cap vs Small Cap</span><span class="learn-stat-val">High (0.8–0.9)</span></div>
+        <div class="learn-stat-row"><span class="learn-stat-label">Bonds vs Gold</span><span class="learn-stat-val">Low / Slight Positive</span></div>
+      </div>
+      <p style="font-size:11px;color:var(--text3)">A classic 60/40 (stocks/bonds) portfolio has historically delivered ~8.5% returns with significantly lower volatility than an all-stock portfolio.</p>
+    </div>
+
+    <div class="learn-card" style="grid-column: 1 / -1;">
+      <div><span class="learn-badge badge-gold">Historical Context</span></div>
+      <h3>Major Market Crashes &amp; Recoveries</h3>
+      <p>Every crash in history has been followed by a recovery. Understanding these events helps investors stay calm during downturns.</p>
+      <div class="crash-grid">
+        <div class="crash-item">
+          <div class="crash-item-title">Great Depression</div>
+          <div class="crash-item-loss">−89% (1929–1932)</div>
+          <div class="crash-item-rec">Recovery: ~25 years</div>
+        </div>
+        <div class="crash-item">
+          <div class="crash-item-title">WWII Selloff</div>
+          <div class="crash-item-loss">−40% (1937–1942)</div>
+          <div class="crash-item-rec">Recovery: ~8 years</div>
+        </div>
+        <div class="crash-item">
+          <div class="crash-item-title">1973 Oil Crisis</div>
+          <div class="crash-item-loss">−48% (1973–1974)</div>
+          <div class="crash-item-rec">Recovery: ~7 years</div>
+        </div>
+        <div class="crash-item">
+          <div class="crash-item-title">Black Monday 1987</div>
+          <div class="crash-item-loss">−34% (Jul–Dec 1987)</div>
+          <div class="crash-item-rec">Recovery: ~2 years</div>
+        </div>
+        <div class="crash-item">
+          <div class="crash-item-title">Dot-Com Crash</div>
+          <div class="crash-item-loss">−49% (2000–2002)</div>
+          <div class="crash-item-rec">Recovery: ~7 years</div>
+        </div>
+        <div class="crash-item">
+          <div class="crash-item-title">2008 Financial Crisis</div>
+          <div class="crash-item-loss">−57% (2007–2009)</div>
+          <div class="crash-item-rec">Recovery: ~5 years</div>
+        </div>
+        <div class="crash-item">
+          <div class="crash-item-title">COVID-19 Crash</div>
+          <div class="crash-item-loss">−34% (Feb–Mar 2020)</div>
+          <div class="crash-item-rec">Recovery: ~5 months</div>
+        </div>
+        <div class="crash-item">
+          <div class="crash-item-title">2022 Rate Hike Bear</div>
+          <div class="crash-item-loss">−25% (Jan–Oct 2022)</div>
+          <div class="crash-item-rec">Recovery: ~1.5 years</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="learn-card" style="grid-column: 1 / -1;">
+      <div><span class="learn-badge badge-blue">Fund Types</span></div>
+      <h3>Index Funds vs. Actively Managed Funds</h3>
+      <p>Understanding the difference between these two approaches is crucial for long-term investing success.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px;">
+        <div>
+          <div style="font-size:12px;color:var(--green);margin-bottom:8px;font-weight:500;">Index Funds (Passive)</div>
+          <div class="learn-stat-row"><span class="learn-stat-label">Strategy</span><span class="learn-stat-val" style="font-size:11px">Track a market index</span></div>
+          <div class="learn-stat-row"><span class="learn-stat-label">Avg Expense Ratio</span><span class="learn-stat-val" style="color:var(--green)">0.03–0.20%</span></div>
+          <div class="learn-stat-row"><span class="learn-stat-label">Beat market (10 yr)</span><span class="learn-stat-val" style="color:var(--green)">~88%</span></div>
+          <div class="learn-stat-row"><span class="learn-stat-label">Tax efficiency</span><span class="learn-stat-val">High</span></div>
+          <div class="learn-stat-row"><span class="learn-stat-label">Turnover</span><span class="learn-stat-val">Low (&lt;5%)</span></div>
+        </div>
+        <div>
+          <div style="font-size:12px;color:var(--gold);margin-bottom:8px;font-weight:500;">Active Funds</div>
+          <div class="learn-stat-row"><span class="learn-stat-label">Strategy</span><span class="learn-stat-val" style="font-size:11px">Stock picking / timing</span></div>
+          <div class="learn-stat-row"><span class="learn-stat-label">Avg Expense Ratio</span><span class="learn-stat-val" style="color:var(--red)">0.50–1.5%</span></div>
+          <div class="learn-stat-row"><span class="learn-stat-label">Beat market (10 yr)</span><span class="learn-stat-val" style="color:var(--red)">~12%</span></div>
+          <div class="learn-stat-row"><span class="learn-stat-label">Tax efficiency</span><span class="learn-stat-val">Low</span></div>
+          <div class="learn-stat-row"><span class="learn-stat-label">Turnover</span><span class="learn-stat-val">High (50–150%)</span></div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--text3)">SPIVA data: over a 20-year horizon, approximately 92–96% of actively managed large-cap US funds underperform their benchmark index after fees.</p>
+    </div>
+
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════
+//  DATA & CONFIG
+// ══════════════════════════════════════════════
+
+const FUNDS = {
+  SP500:  { name: 'S&P 500',          color: '#4a9eff', er: 0.0003, dash: [] },
+  NASDAQ: { name: 'NASDAQ Composite', color: '#00d17a', er: 0.002,  dash: [5,3] },
+  DJIA:   { name: 'Dow Jones (DJIA)', color: '#f5a623', er: 0.0002, dash: [4,2] },
+  BONDS:  { name: 'US 10-Yr Bonds',   color: '#a78bfa', er: 0.0003, dash: [8,4] },
+  GOLD:   { name: 'Gold',             color: '#e2e8f0', er: 0,      dash: [2,3] },
+};
+
+const YEARS = [];
+for (let y = 1924; y <= 2024; y++) YEARS.push(y);
+
+// Seeded pseudo-random for reproducibility
+function seededRand(year, seed) {
+  const x = Math.sin(year * seed * 31.7 + seed * 17.3) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function generateIndex(seed, baseReturn, crashes) {
+  let v = 100;
+  const out = [100];
+  for (let i = 1; i < YEARS.length; i++) {
+    const y = YEARS[i];
+    let r = baseReturn + (seededRand(y, seed) - 0.5) * 0.18;
+    for (const c of crashes) {
+      if (y >= c.start && y <= c.end) r = c.rate;
+    }
+    v *= (1 + r);
+    out.push(Math.round(v * 100) / 100);
+  }
+  return out;
+}
+
+const CRASHES_SP = [
+  { start:1929, end:1932, rate:-.28 }, { start:1933, end:1934, rate:.25 },
+  { start:1937, end:1938, rate:-.35 }, { start:1939, end:1942, rate:-.08 },
+  { start:1946, end:1946, rate:-.12 }, { start:1966, end:1966, rate:-.10 },
+  { start:1969, end:1970, rate:-.14 }, { start:1973, end:1974, rate:-.25 },
+  { start:1987, end:1987, rate:-.12 }, { start:2000, end:2002, rate:-.20 },
+  { start:2008, end:2009, rate:-.32 }, { start:2020, end:2020, rate:-.05 },
+  { start:2022, end:2022, rate:-.12 },
+];
+
+const SP500_DATA  = generateIndex(1, .106, CRASHES_SP);
+const NASDAQ_DATA = generateIndex(2, .118, [
+  { start:2000, end:2002, rate:-.38 }, { start:2008, end:2009, rate:-.28 },
+  { start:2022, end:2022, rate:-.20 }, ...CRASHES_SP.slice(0, 6)
+]);
+const DJIA_DATA   = generateIndex(3, .097, CRASHES_SP);
+const BONDS_DATA  = generateIndex(4, .052, [{ start:1980, end:1980, rate:-.04 }, { start:2022, end:2022, rate:-.14 }]);
+const GOLD_DATA   = generateIndex(5, .038, [{ start:1980, end:1982, rate:-.25 }, { start:1996, end:2000, rate:-.05 }]);
+
+const INDEX_DATA = { SP500: SP500_DATA, NASDAQ: NASDAQ_DATA, DJIA: DJIA_DATA, BONDS: BONDS_DATA, GOLD: GOLD_DATA };
+
+const EVENTS = [
+  { year:1929, name:'Black Tuesday — Great Depression begins', chg:'-29%', dir:'down' },
+  { year:1933, name:'FDR New Deal — recovery begins', chg:'+53%', dir:'up' },
+  { year:1941, name:'WWII — Pearl Harbor attack', chg:'-17%', dir:'down' },
+  { year:1945, name:'WWII ends — post-war bull market', chg:'+36%', dir:'up' },
+  { year:1966, name:'Vietnam War inflation concerns', chg:'-10%', dir:'down' },
+  { year:1973, name:'OPEC oil embargo recession', chg:'-18%', dir:'down' },
+  { year:1980, name:'Volcker shock — 20% interest rates', chg:'+26%', dir:'up' },
+  { year:1987, name:'Black Monday — worst single day ever', chg:'-33%', dir:'down' },
+  { year:1991, name:'Gulf War recovery — longest bull run', chg:'+30%', dir:'up' },
+  { year:2000, name:'Dot-com bubble bursts', chg:'-49%', dir:'down' },
+  { year:2008, name:'Global Financial Crisis', chg:'-57%', dir:'down' },
+  { year:2009, name:'GFC recovery — decade bull market starts', chg:'+26%', dir:'up' },
+  { year:2020, name:'COVID-19 crash & fastest recovery ever', chg:'+16%', dir:'up' },
+  { year:2022, name:'Fed rate hikes — bear market', chg:'-25%', dir:'down' },
+];
+
+// ══════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════
+
+let portfolio = {
+  cash: 10000,
+  holdings: [],
+  trades: [],
+};
+
+let visibleSeries = { SP500:true, NASDAQ:true, DJIA:true, BONDS:true, GOLD:false };
+let currentRange = 100;
+let mainChart = null;
+let perfChart = null;
+
+// ══════════════════════════════════════════════
+//  UTILITIES
+// ══════════════════════════════════════════════
+
+function fmt(n) {
+  return new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', minimumFractionDigits:0, maximumFractionDigits:0 }).format(n);
+}
+function fmtD(n) {
+  return new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', minimumFractionDigits:2, maximumFractionDigits:2 }).format(n);
+}
+function fmtPct(n) {
+  return (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+}
+
+function showToast(msg, type = 'info') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + type + ' show';
+  setTimeout(() => { t.className = 'toast'; }, 3200);
+}
+
+// ══════════════════════════════════════════════
+//  TICKER BAR
+// ══════════════════════════════════════════════
+
+function buildTickers() {
+  const bar = document.getElementById('ticker-bar');
+  const items = [
+    { sym:'SPX',  data:SP500_DATA },
+    { sym:'COMP', data:NASDAQ_DATA },
+    { sym:'DJIA', data:DJIA_DATA },
+    { sym:'BOND', data:BONDS_DATA },
+    { sym:'GOLD', data:GOLD_DATA },
+  ];
+  bar.innerHTML = items.map((t, i) => {
+    const val  = t.data[t.data.length - 1];
+    const prev = t.data[t.data.length - 2];
+    const chg  = ((val - prev) / prev * 100);
+    const cls  = chg >= 0 ? 'up' : 'down';
+    const arr  = chg >= 0 ? '▲' : '▼';
+    return `
+      ${i > 0 ? '<div class="ticker-divider"></div>' : ''}
+      <div class="ticker-item">
+        <div class="ticker-sym">${t.sym}</div>
+        <div class="ticker-price">${val.toFixed(1)}</div>
+        <div class="ticker-chg ${cls}">${arr} ${Math.abs(chg).toFixed(2)}%</div>
+      </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════
+//  EVENTS LIST
+// ══════════════════════════════════════════════
+
+function buildEvents() {
+  const html = EVENTS.map(e => `
+    <div class="event-item" onclick="highlightYear(${e.year})">
+      <div class="event-year">${e.year}</div>
+      <div class="event-desc">${e.name}</div>
+      <div class="event-chg ${e.dir === 'up' ? 'up' : 'down'}">${e.chg}</div>
+    </div>`).join('');
+  const el = document.getElementById('events-list-main');
+  if (el) el.innerHTML = html;
+}
+
+function highlightYear(year) {
+  if (!mainChart) return;
+  const startIdx = Math.max(0, YEARS.length - currentRange);
+  const labels = YEARS.slice(startIdx);
+  const idx = labels.indexOf(year);
+  if (idx < 0) { showToast(`Year ${year} is outside current range — switch to ALL`, 'info'); return; }
+  mainChart.tooltip.setActiveElements(
+    mainChart.data.datasets.map((_, di) => ({ datasetIndex: di, index: idx })),
+    { x: 0, y: 0 }
+  );
+  mainChart.update('none');
+}
+
+// ══════════════════════════════════════════════
+//  LEGEND
+// ══════════════════════════════════════════════
+
+function buildLegend() {
+  const leg = document.getElementById('chart-legend');
+  leg.innerHTML = Object.entries(FUNDS).map(([k, f]) => `
+    <div class="legend-item ${visibleSeries[k] ? '' : 'muted'}" onclick="toggleSeries('${k}')">
+      <div class="legend-dot" style="background:${f.color}"></div>
+      <span>${f.name}</span>
+      <span class="legend-er">${(f.er * 100).toFixed(3)}% ER</span>
+    </div>`).join('');
+}
+
+function toggleSeries(key) {
+  visibleSeries[key] = !visibleSeries[key];
+  buildLegend();
+  if (!mainChart) return;
+  const idx = Object.keys(FUNDS).indexOf(key);
+  mainChart.data.datasets[idx].hidden = !visibleSeries[key];
+  mainChart.update();
+}
+
+// ══════════════════════════════════════════════
+//  MAIN CHART
+// ══════════════════════════════════════════════
+
+function setRange(years) {
+  currentRange = years;
+  document.querySelectorAll('#range-controls .ctrl-btn').forEach((b, i) => {
+    b.classList.toggle('active', [10, 25, 50, 100][i] === years);
+  });
+  buildMainChart();
+}
+
+function buildMainChart() {
+  const startIdx = Math.max(0, YEARS.length - currentRange);
+  const labels = YEARS.slice(startIdx);
+  const datasets = Object.entries(FUNDS).map(([k, f]) => {
+    const raw  = INDEX_DATA[k].slice(startIdx);
+    const base = raw[0];
+    return {
+      label: f.name,
+      data: raw.map(v => Math.round(v / base * 1000) / 10),
+      borderColor: f.color,
+      borderWidth: 1.5,
+      pointRadius: 0,
+      tension: 0.25,
+      borderDash: f.dash,
+      hidden: !visibleSeries[k],
+      fill: false,
+    };
+  });
+
+  if (mainChart) mainChart.destroy();
+  const ctx = document.getElementById('mainChart').getContext('2d');
+  mainChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 350 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a2235',
+          borderColor: '#2a3652',
+          borderWidth: 1,
+          titleColor: '#e8edf5',
+          bodyColor: '#8b9dbf',
+          padding: 12,
+          callbacks: {
+            title: items => `Year: ${items[0].label}`,
+            label: item => ` ${item.dataset.label}: ${item.raw.toFixed(1)}x`,
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(42,54,82,0.4)' },
+          ticks: { color: '#5a6b8a', font: { size: 11, family: "'DM Mono', monospace" }, maxTicksLimit: 12 }
+        },
+        y: {
+          grid: { color: 'rgba(42,54,82,0.4)' },
+          ticks: {
+            color: '#5a6b8a', font: { size: 11, family: "'DM Mono', monospace" },
+            callback: v => v + 'x'
+          },
+          title: { display: true, text: 'Normalized return (1.0x = break even)', color: '#5a6b8a', font: { size: 10 } }
+        }
+      }
+    }
+  });
+}
+
+// ══════════════════════════════════════════════
+//  EXPENSE INFO
+// ══════════════════════════════════════════════
+
+function updateExpenseInfo() {
+  const ticker  = document.getElementById('trade-ticker').value;
+  const f       = FUNDS[ticker];
+  const buyY    = parseInt(document.getElementById('trade-year').value) || 1990;
+  const sellY   = parseInt(document.getElementById('trade-sell').value) || 2024;
+  const years   = Math.max(1, sellY - buyY);
+  const erDrag  = (1 - Math.pow(1 - f.er, years)) * 100;
+  const el      = document.getElementById('expense-info');
+  el.innerHTML  = `<strong>${f.name}</strong> &nbsp;|&nbsp; Expense Ratio: <strong>${(f.er * 100).toFixed(3)}%</strong><br>Over ${years} yr${years !== 1 ? 's' : ''}, fee drag ≈ <strong>${erDrag.toFixed(2)}%</strong> of total return`;
+}
+
+// ══════════════════════════════════════════════
+//  TRADE EXECUTION
+// ══════════════════════════════════════════════
+
+function executeTrade(action) {
+  if (action === 'sell') {
+    if (portfolio.holdings.length === 0) { showToast('No open positions to sell.', 'error'); return; }
+    const last = portfolio.holdings.pop();
+    portfolio.cash += last.currentValue;
+    portfolio.trades.push({ ...last, action: 'sold' });
+    showToast(`Sold ${last.name} — realized ${fmtPct(last.gainPct)}`, last.gain >= 0 ? 'success' : 'error');
+    updateUI(); return;
+  }
+
+  // BUY
+  const ticker  = document.getElementById('trade-ticker').value;
+  const buyYear = parseInt(document.getElementById('trade-year').value) || 1990;
+  const sellYear= parseInt(document.getElementById('trade-sell').value) || 2024;
+  const amount  = parseFloat(document.getElementById('trade-amount').value) || 1000;
+
+  if (amount > portfolio.cash) { showToast('Insufficient cash for this trade.', 'error'); return; }
+  if (buyYear >= sellYear)     { showToast('Sell year must be after buy year.', 'error'); return; }
+  if (buyYear < 1924 || sellYear > 2024) { showToast('Years must be between 1924 and 2024.', 'error'); return; }
+  if (amount < 100)            { showToast('Minimum trade size is $100.', 'error'); return; }
+
+  const f        = FUNDS[ticker];
+  const data     = INDEX_DATA[ticker];
+  const buyIdx   = YEARS.indexOf(buyYear);
+  const sellIdx  = YEARS.indexOf(sellYear);
+  const buyPrice = data[buyIdx];
+  const sellPrice= data[sellIdx];
+  const years    = sellYear - buyYear;
+  const rawReturn= sellPrice / buyPrice;
+  const erDrag   = Math.pow(1 - f.er, years);
+  const adjReturn= rawReturn * erDrag;
+  const currentValue = Math.round(amount * adjReturn * 100) / 100;
+  const gain     = Math.round((currentValue - amount) * 100) / 100;
+  const gainPct  = Math.round((adjReturn - 1) * 10000) / 100;
+
+  portfolio.cash -= amount;
+  const position = { ticker, name: f.name, buyYear, sellYear, amount, currentValue, gain, gainPct, er: f.er, years, action: 'bought' };
+  portfolio.holdings.push(position);
+  portfolio.trades.push({ ...position });
+  showToast(`Bought ${f.name} ${buyYear}→${sellYear}: projected ${fmtPct(gainPct)}`, gain >= 0 ? 'success' : 'error');
+  updateUI();
+}
+
+// ══════════════════════════════════════════════
+//  UI UPDATE
+// ══════════════════════════════════════════════
+
+function updateUI() {
+  const totalHeld      = portfolio.holdings.reduce((s, h) => s + h.currentValue, 0);
+  const totalInvested  = portfolio.holdings.reduce((s, h) => s + h.amount, 0);
+  const totalVal       = portfolio.cash + totalHeld;
+  const totalGain      = totalHeld - totalInvested;
+  const totalGainPct   = totalInvested > 0 ? (totalGain / totalInvested * 100) : 0;
+
+  document.getElementById('cash-display').textContent = fmtD(portfolio.cash);
+  document.getElementById('port-total').textContent   = fmt(totalVal);
+
+  const retEl = document.getElementById('port-return');
+  retEl.textContent = (totalGain >= 0 ? '+' : '') + fmtD(totalGain);
+  retEl.className = 'port-stat-val ' + (totalGain > 0 ? 'up' : totalGain < 0 ? 'down' : 'neutral');
+
+  const pctEl = document.getElementById('port-pct');
+  pctEl.textContent = fmtPct(totalGainPct);
+  pctEl.className = 'port-stat-val ' + (totalGainPct > 0 ? 'up' : totalGainPct < 0 ? 'down' : 'neutral');
+
+  document.getElementById('port-positions').textContent = portfolio.holdings.length;
+
+  // Holdings table
+  const tbody = document.getElementById('holdings-body');
+  if (portfolio.holdings.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text3);font-size:12px;padding:14px 0;text-align:center;">No positions yet — place a trade below</td></tr>';
+  } else {
+    tbody.innerHTML = portfolio.holdings.map(h => `
+      <tr>
+        <td>
+          <span class="ticker-badge">${h.ticker}</span>
+          <div class="year-range">${h.buyYear} → ${h.sellYear}</div>
+        </td>
+        <td style="font-family:var(--font-mono)">${fmt(h.amount)}</td>
+        <td style="font-family:var(--font-mono)">${fmt(h.currentValue)}</td>
+        <td><span class="gain-chip ${h.gain >= 0 ? 'pos' : 'neg'}">${fmtPct(h.gainPct)}</span></td>
+      </tr>`).join('');
+  }
+}
+
+// ══════════════════════════════════════════════
+//  PERFORMANCE PANEL
+// ══════════════════════════════════════════════
+
+function updatePerformancePanel() {
+  const totalHeld     = portfolio.holdings.reduce((s, h) => s + h.currentValue, 0);
+  const totalInvested = portfolio.holdings.reduce((s, h) => s + h.amount, 0);
+  const totalGain     = totalHeld - totalInvested;
+  const totalGainPct  = totalInvested > 0 ? (totalGain / totalInvested * 100) : 0;
+  const avgHold       = portfolio.holdings.length > 0 ? portfolio.holdings.reduce((s, h) => s + h.years, 0) / portfolio.holdings.length : 0;
+  const avgAnn        = avgHold > 0 ? (Math.pow(1 + totalGainPct / 100, 1 / avgHold) - 1) * 100 : 0;
+
+  document.getElementById('perf-stats').innerHTML = `
+    <div class="perf-stat">
+      <div class="perf-stat-label">Total Invested</div>
+      <div class="perf-stat-val">${fmt(totalInvested)}</div>
+      <div class="perf-stat-sub">${portfolio.holdings.length} open position${portfolio.holdings.length !== 1 ? 's' : ''}</div>
+    </div>
+    <div class="perf-stat">
+      <div class="perf-stat-label">Portfolio Value</div>
+      <div class="perf-stat-val">${fmt(totalHeld)}</div>
+      <div class="perf-stat-sub">held positions only</div>
+    </div>
+    <div class="perf-stat">
+      <div class="perf-stat-label">Total Return</div>
+      <div class="perf-stat-val ${totalGain >= 0 ? 'up' : 'down'}">${fmtPct(totalGainPct)}</div>
+      <div class="perf-stat-sub">${totalGain >= 0 ? '+' : ''}${fmt(totalGain)} gain/loss</div>
+    </div>
+    <div class="perf-stat">
+      <div class="perf-stat-label">Annualized Return</div>
+      <div class="perf-stat-val ${avgAnn >= 0 ? 'up' : 'down'}">${fmtPct(avgAnn)}</div>
+      <div class="perf-stat-sub">avg ${avgHold.toFixed(1)} yr hold</div>
+    </div>
+  `;
+
+  const benchmarks = [
+    { name: 'S&P 500 (hist.)', rate: 10.5, color: '#4a9eff' },
+    { name: 'DJIA (hist.)',    rate: 9.7,  color: '#f5a623' },
+    { name: 'US Bonds',        rate: 5.2,  color: '#a78bfa' },
+    { name: 'Gold',            rate: 3.8,  color: '#e2e8f0' },
+    { name: 'Your Portfolio',  rate: parseFloat(avgAnn.toFixed(2)), color: avgAnn >= 9 ? '#00d17a' : avgAnn >= 5 ? '#f5a623' : '#ff5252' },
+  ];
+  const maxRate = Math.max(...benchmarks.map(b => b.rate), 1);
+
+  document.getElementById('benchmark-bars').innerHTML = benchmarks.map(b => `
+    <div class="compare-bar-row">
+      <div class="compare-bar-label" style="font-size:11px">${b.name}</div>
+      <div class="compare-bar-track">
+        <div class="compare-bar-fill" style="width:${Math.max(0, (b.rate / maxRate * 100)).toFixed(1)}%;background:${b.color}"></div>
+      </div>
+      <div class="compare-bar-val" style="color:${b.color}">${b.rate.toFixed(1)}%</div>
+    </div>`).join('');
+
+  const hist = document.getElementById('trade-history');
+  if (portfolio.trades.length === 0) {
+    hist.innerHTML = '<div style="font-size:12px;color:var(--text3)">No trades yet</div>';
+  } else {
+    hist.innerHTML = portfolio.trades.slice(-8).reverse().map(t => `
+      <div class="trade-log-item">
+        <div>
+          <span class="ticker-badge">${t.ticker}</span>
+          <span style="color:var(--text3);font-size:11px;margin-left:6px">${t.action} ${t.buyYear}</span>
+        </div>
+        <div>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--text2)">${fmt(t.amount)}</span>
+          <span class="gain-chip ${(t.gain || 0) >= 0 ? 'pos' : 'neg'}" style="margin-left:6px">${(t.gain || 0) >= 0 ? '+' : ''}${fmt(t.gain || 0)}</span>
+        </div>
+      </div>`).join('');
+  }
+
+  buildPerfChart();
+}
+
+function buildPerfChart() {
+  if (perfChart) perfChart.destroy();
+  const ctx = document.getElementById('perfChart').getContext('2d');
+  const startIdx = YEARS.length - 50;
+  const labels = YEARS.slice(startIdx);
+  const spBase   = SP500_DATA[startIdx];
+  const bondBase = BONDS_DATA[startIdx];
+  const goldBase = GOLD_DATA[startIdx];
+
+  perfChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'S&P 500',
+          data: SP500_DATA.slice(startIdx).map(v => Math.round(v / spBase * 1000) / 10),
+          borderColor: '#4a9eff', borderWidth: 1.5, pointRadius: 0, fill: false,
+        },
+        {
+          label: 'US Bonds',
+          data: BONDS_DATA.slice(startIdx).map(v => Math.round(v / bondBase * 1000) / 10),
+          borderColor: '#a78bfa', borderWidth: 1.5, pointRadius: 0, borderDash: [6,3], fill: false,
+        },
+        {
+          label: 'Gold',
+          data: GOLD_DATA.slice(startIdx).map(v => Math.round(v / goldBase * 1000) / 10),
+          borderColor: '#e2e8f0', borderWidth: 1.5, pointRadius: 0, borderDash: [3,3], fill: false,
+        },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a2235', borderColor: '#2a3652', borderWidth: 1,
+          titleColor: '#e8edf5', bodyColor: '#8b9dbf', padding: 10,
+          callbacks: { title: items => `Year: ${items[0].label}`, label: item => ` ${item.dataset.label}: ${item.raw.toFixed(1)}x` }
+        }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(42,54,82,0.4)' }, ticks: { color: '#5a6b8a', font: { size: 10 }, maxTicksLimit: 10 } },
+        y: { grid: { color: 'rgba(42,54,82,0.4)' }, ticks: { color: '#5a6b8a', font: { size: 10 }, callback: v => v + 'x' } }
+      }
+    }
+  });
+}
+
+// ══════════════════════════════════════════════
+//  PANEL SWITCHING
+// ══════════════════════════════════════════════
+
+function showPanel(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab, .mobile-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  const tabs = ['market', 'performance', 'learn'];
+  const idx = tabs.indexOf(name);
+  document.querySelectorAll('.nav-tab')[idx]?.classList.add('active');
+  document.querySelectorAll('.mobile-tab')[idx]?.classList.add('active');
+  if (name === 'performance') updatePerformancePanel();
+}
+
+// ══════════════════════════════════════════════
+//  RESET
+// ══════════════════════════════════════════════
+
+function resetPortfolio() {
+  if (!confirm('Reset portfolio? All trades and holdings will be cleared.')) return;
+  portfolio = { cash: 10000, holdings: [], trades: [] };
+  showToast('Portfolio reset — starting fresh with $10,000', 'info');
+  updateUI();
+}
+
+// ══════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════
+
+buildTickers();
+buildEvents();
+buildLegend();
+buildMainChart();
+updateExpenseInfo();
+updateUI();
+</script>
+</body>
+</html>
