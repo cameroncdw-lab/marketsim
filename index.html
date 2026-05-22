@@ -840,13 +840,13 @@
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <div id="live-ohlc" style="display:flex;gap:12px;font-size:11px;font-family:var(--font-mono);color:var(--text3);"></div>
           <div class="live-range-tabs" id="live-range-tabs">
-            <button class="live-range-btn" onclick="setLiveRange('1day')">1D</button>
-            <button class="live-range-btn" onclick="setLiveRange('5day')">5D</button>
-            <button class="live-range-btn active" onclick="setLiveRange('1month')">1M</button>
-            <button class="live-range-btn" onclick="setLiveRange('3month')">3M</button>
-            <button class="live-range-btn" onclick="setLiveRange('6month')">6M</button>
-            <button class="live-range-btn" onclick="setLiveRange('1year')">1Y</button>
-            <button class="live-range-btn" onclick="setLiveRange('5year')">5Y</button>
+            <button class="live-range-btn" onclick="setLiveRange('1d')">1D</button>
+            <button class="live-range-btn" onclick="setLiveRange('5d')">5D</button>
+            <button class="live-range-btn active" onclick="setLiveRange('1mo')">1M</button>
+            <button class="live-range-btn" onclick="setLiveRange('3mo')">3M</button>
+            <button class="live-range-btn" onclick="setLiveRange('6mo')">6M</button>
+            <button class="live-range-btn" onclick="setLiveRange('1y')">1Y</button>
+            <button class="live-range-btn" onclick="setLiveRange('5y')">5Y</button>
           </div>
           <div style="display:flex;gap:4px;">
             <button class="ctrl-btn" id="chart-type-line" onclick="setChartType('line')" style="font-size:11px;padding:4px 9px;">Line</button>
@@ -1446,97 +1446,125 @@ function showPanel(name) {
 }
 
 // ══════════════════════════════════════════════
-//  LIVE CHARTS
+//  LIVE CHARTS  (Yahoo Finance via allorigins proxy)
 // ══════════════════════════════════════════════
 
-const TD_KEY = 'fbd47d0357a34fa783f4b381544ecd1c';
-const TD_BASE = 'https://api.twelvedata.com';
-
+// Real index & asset symbols — actual values as seen on Schwab / Yahoo Finance
 const LIVE_SYMBOLS = [
-  { sym:'SPY',  name:'S&P 500 ETF',    color:'#4a9eff' },
-  { sym:'QQQ',  name:'NASDAQ ETF',      color:'#00d17a' },
-  { sym:'DIA',  name:'Dow Jones ETF',   color:'#f5a623' },
-  { sym:'AGG',  name:'US Bonds ETF',    color:'#a78bfa' },
-  { sym:'GLD',  name:'Gold ETF',        color:'#e2e8f0' },
-  { sym:'IWM',  name:'Russell 2000',    color:'#fb7185' },
-  { sym:'VTI',  name:'Total Market',    color:'#34d399' },
+  { sym:'^GSPC',  ySym:'%5EGSPC',  name:'S&P 500',       color:'#4a9eff', decimals:2 },
+  { sym:'^DJI',   ySym:'%5EDJI',   name:'Dow Jones',      color:'#f5a623', decimals:2 },
+  { sym:'^IXIC',  ySym:'%5EIXIC',  name:'NASDAQ',         color:'#00d17a', decimals:2 },
+  { sym:'^RUT',   ySym:'%5ERUT',   name:'Russell 2000',   color:'#fb7185', decimals:2 },
+  { sym:'GC=F',   ySym:'GC%3DF',   name:'Gold Futures',   color:'#e2e8f0', decimals:2 },
+  { sym:'^TNX',   ySym:'%5ETNX',   name:'10-Yr Bond Yld', color:'#a78bfa', decimals:2 },
+  { sym:'^VIX',   ySym:'%5EVIX',   name:'VIX Fear Index', color:'#ff5252', decimals:2 },
 ];
 
 let liveChart       = null;
-let liveSymbol      = 'SPY';
-let liveRange       = '1month';
-let liveChartType   = 'candle';
+let liveSymbol      = '^GSPC';
+let liveRange       = '1mo';
+let liveChartType   = 'line';
 let liveInitialized = false;
-let liveRefreshTimer= null;
 let liveCountdown   = null;
 let liveCardData    = {};
 let liveCountdownVal= 0;
+
+// Yahoo Finance range → interval mapping
+const YF_RANGES = {
+  '1d':  { interval:'5m',  label:'1D' },
+  '5d':  { interval:'30m', label:'5D' },
+  '1mo': { interval:'1d',  label:'1M' },
+  '3mo': { interval:'1d',  label:'3M' },
+  '6mo': { interval:'1wk', label:'6M' },
+  '1y':  { interval:'1wk', label:'1Y' },
+  '5y':  { interval:'1mo', label:'5Y' },
+};
 
 function isMarketOpen() {
   const now = new Date();
   const et  = new Date(now.toLocaleString('en-US', { timeZone:'America/New_York' }));
   const day = et.getDay();
-  const h   = et.getHours(), m = et.getMinutes();
-  const mins = h * 60 + m;
-  return day >= 1 && day <= 5 && mins >= 570 && mins < 960; // 9:30–16:00 ET
+  const mins = et.getHours() * 60 + et.getMinutes();
+  return day >= 1 && day <= 5 && mins >= 570 && mins < 960;
 }
 
 function updateMarketStatus() {
   const el = document.getElementById('live-market-status');
   if (!el) return;
-  if (isMarketOpen()) {
-    el.innerHTML = '<span class="live-dot"></span>Market Open';
-  } else {
-    el.innerHTML = '<span class="live-dot closed"></span>Market Closed';
-  }
+  el.innerHTML = isMarketOpen()
+    ? '<span class="live-dot"></span>Market Open'
+    : '<span class="live-dot closed"></span>Market Closed';
 }
 
 function fmtPrice(n) {
   if (n == null || isNaN(n)) return '—';
-  return '$' + parseFloat(n).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
+  const v = parseFloat(n);
+  if (v >= 1000) return '$' + v.toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
+  return '$' + v.toFixed(2);
 }
 function fmtVol(n) {
-  if (!n) return '—';
+  if (!n || n <= 0) return '—';
   if (n >= 1e9) return (n/1e9).toFixed(2)+'B';
   if (n >= 1e6) return (n/1e6).toFixed(2)+'M';
   if (n >= 1e3) return (n/1e3).toFixed(0)+'K';
-  return n;
+  return String(n);
 }
-function fmtMktCap(n) {
-  if (!n) return '—';
-  if (n >= 1e12) return '$'+(n/1e12).toFixed(2)+'T';
-  if (n >= 1e9)  return '$'+(n/1e9).toFixed(2)+'B';
-  if (n >= 1e6)  return '$'+(n/1e6).toFixed(2)+'M';
-  return '$'+n;
+
+// Fetch via allorigins CORS proxy → Yahoo Finance
+async function yfFetch(url) {
+  const proxy = 'https://api.allorigins.win/get?url=' + encodeURIComponent(url);
+  const res   = await fetch(proxy);
+  const json  = await res.json();
+  return JSON.parse(json.contents);
 }
 
 async function fetchQuotes() {
-  const syms = LIVE_SYMBOLS.map(s => s.sym).join(',');
-  try {
-    const res  = await fetch(`${TD_BASE}/quote?symbol=${syms}&apikey=${TD_KEY}`);
-    const data = await res.json();
-    LIVE_SYMBOLS.forEach(s => {
-      const q = Array.isArray(data) ? data.find(d=>d.symbol===s.sym) : data[s.sym] || (data.symbol===s.sym ? data : null);
-      if (q && !q.status) liveCardData[s.sym] = q;
-    });
-    buildLiveCards();
-    if (liveCardData[liveSymbol]) updateStatsBar(liveCardData[liveSymbol]);
-  } catch(e) { console.warn('Quote fetch error', e); }
+  for (const s of LIVE_SYMBOLS) {
+    try {
+      const url  = `https://query1.finance.yahoo.com/v8/finance/chart/${s.ySym}?interval=1d&range=5d`;
+      const data = await yfFetch(url);
+      const r    = data?.chart?.result?.[0];
+      if (!r) continue;
+      const meta  = r.meta;
+      const closes = r.indicators?.quote?.[0]?.close || [];
+      const validCloses = closes.filter(v => v != null);
+      const last  = validCloses[validCloses.length - 1];
+      const prev  = validCloses[validCloses.length - 2] || meta.previousClose || last;
+      const chgAmt = last - prev;
+      const chgPct = prev ? (chgAmt / prev * 100) : 0;
+      liveCardData[s.sym] = {
+        price: last,
+        prev,
+        chgAmt,
+        chgPct,
+        open:  meta.regularMarketOpen,
+        high:  meta.regularMarketDayHigh,
+        low:   meta.regularMarketDayLow,
+        volume: meta.regularMarketVolume,
+        fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
+        fiftyTwoWeekLow:  meta.fiftyTwoWeekLow,
+        name: s.name,
+      };
+    } catch(e) { console.warn('Quote error', s.sym, e); }
+  }
+  buildLiveCards();
+  if (liveCardData[liveSymbol]) updateStatsBar(liveCardData[liveSymbol]);
 }
 
 function buildLiveCards() {
   const container = document.getElementById('live-cards');
   if (!container) return;
   container.innerHTML = LIVE_SYMBOLS.map(s => {
-    const q   = liveCardData[s.sym];
-    const price = q ? fmtPrice(q.close || q.price) : '—';
-    const chg   = q ? parseFloat(q.percent_change||0) : 0;
-    const chgStr= q ? (chg>=0?'+':'')+chg.toFixed(2)+'%' : '—';
+    const q     = liveCardData[s.sym];
+    const price = q ? fmtPrice(q.price) : '…';
+    const chg   = q ? q.chgPct : 0;
+    const chgStr= q ? (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%' : '…';
     const cls   = chg >= 0 ? 'up' : 'down';
     const active= s.sym === liveSymbol ? 'active' : '';
+    const dispSym = s.sym.replace('^','').replace('=F','');
     return `
       <div class="live-card ${active}" onclick="switchSymbol('${s.sym}')">
-        <div class="live-card-sym">${s.sym}</div>
+        <div class="live-card-sym">${dispSym}</div>
         <div class="live-card-name">${s.name}</div>
         <div class="live-card-price">${price}</div>
         <div class="live-card-chg ${cls}">${chgStr}</div>
@@ -1547,9 +1575,10 @@ function buildLiveCards() {
 function buildSymbolTabs() {
   const el = document.getElementById('live-symbol-tabs');
   if (!el) return;
-  el.innerHTML = LIVE_SYMBOLS.map(s => `
-    <button class="live-sym-btn ${s.sym===liveSymbol?'active':''}" onclick="switchSymbol('${s.sym}')">${s.sym}</button>
-  `).join('');
+  el.innerHTML = LIVE_SYMBOLS.map(s => {
+    const disp = s.sym.replace('^','').replace('=F','');
+    return `<button class="live-sym-btn ${s.sym===liveSymbol?'active':''}" onclick="switchSymbol('${s.sym}')">${disp}</button>`;
+  }).join('');
 }
 
 async function switchSymbol(sym) {
@@ -1563,103 +1592,109 @@ async function switchSymbol(sym) {
 function setLiveRange(range) {
   liveRange = range;
   document.querySelectorAll('.live-range-btn').forEach(b => {
-    const map = {'1day':'1D','5day':'5D','1month':'1M','3month':'3M','6month':'6M','1year':'1Y','5year':'5Y'};
-    b.classList.toggle('active', b.textContent === map[range]);
+    b.classList.toggle('active', b.textContent === YF_RANGES[range]?.label);
   });
   fetchAndDrawChart();
 }
 
 function setChartType(type) {
   liveChartType = type;
-  document.getElementById('chart-type-line').classList.toggle('active', type==='line');
-  document.getElementById('chart-type-candle').classList.toggle('active', type==='candle');
+  document.getElementById('chart-type-line').classList.toggle('active', type === 'line');
+  document.getElementById('chart-type-candle').classList.toggle('active', type === 'candle');
   fetchAndDrawChart();
 }
 
-function rangeToInterval(range) {
-  const map = { '1day':'5min', '5day':'30min', '1month':'1day', '3month':'1day', '6month':'1week', '1year':'1week', '5year':'1month' };
-  return map[range] || '1day';
-}
-function rangeToOutputSize(range) {
-  const map = { '1day':78, '5day':80, '1month':31, '3month':90, '6month':26, '1year':52, '5year':60 };
-  return map[range] || 30;
+function showSpinner(show) {
+  const chartEl = document.getElementById('liveChart');
+  if (!chartEl) return;
+  const wrap = chartEl.parentElement;
+  let spinner = document.getElementById('live-spin-overlay');
+  if (!spinner) {
+    spinner = document.createElement('div');
+    spinner.id = 'live-spin-overlay';
+    spinner.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,14,26,.7);z-index:10;border-radius:8px;flex-direction:column;gap:10px;';
+    spinner.innerHTML = '<div class="live-spinner"></div><div style="font-size:12px;color:#8b9dbf">Loading real market data…</div>';
+    wrap.appendChild(spinner);
+  }
+  spinner.style.display = show ? 'flex' : 'none';
 }
 
 async function fetchAndDrawChart() {
   const chartEl = document.getElementById('liveChart');
   if (!chartEl) return;
+  showSpinner(true);
 
-  // Show spinner
-  const wrap = chartEl.parentElement;
-  wrap.style.position = 'relative';
-  let spinner = document.getElementById('live-spin-overlay');
-  if (!spinner) {
-    spinner = document.createElement('div');
-    spinner.id = 'live-spin-overlay';
-    spinner.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,14,26,.6);z-index:10;border-radius:8px;';
-    spinner.innerHTML = '<div class="live-spinner"></div>';
-    wrap.appendChild(spinner);
-  }
-  spinner.style.display = 'flex';
-
-  const interval   = rangeToInterval(liveRange);
-  const outputSize = rangeToOutputSize(liveRange);
-  const sym        = LIVE_SYMBOLS.find(s=>s.sym===liveSymbol);
+  const sym   = LIVE_SYMBOLS.find(s => s.sym === liveSymbol);
+  const range = liveRange;
+  const { interval } = YF_RANGES[range];
 
   try {
-    const url  = `${TD_BASE}/time_series?symbol=${liveSymbol}&interval=${interval}&outputsize=${outputSize}&apikey=${TD_KEY}`;
-    const res  = await fetch(url);
-    const data = await res.json();
+    const url  = `https://query1.finance.yahoo.com/v8/finance/chart/${sym.ySym}?interval=${interval}&range=${range}`;
+    const data = await yfFetch(url);
+    const result = data?.chart?.result?.[0];
 
-    if (data.status === 'error' || !data.values) {
-      spinner.style.display = 'none';
-      showToast('Could not load data for ' + liveSymbol + '. API limit may be reached.', 'error');
-      return;
-    }
+    if (!result) { showSpinner(false); showToast('No data returned for ' + sym.name, 'error'); return; }
 
-    const values = [...data.values].reverse();
-    const labels = values.map(v => {
-      const d = new Date(v.datetime);
-      if (interval.includes('min') || interval.includes('hour')) {
-        return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+    const timestamps = result.timestamp || [];
+    const quote      = result.indicators?.quote?.[0] || {};
+    const closes     = quote.close  || [];
+    const opens      = quote.open   || [];
+    const highs      = quote.high   || [];
+    const lows       = quote.low    || [];
+    const volumes    = quote.volume || [];
+    const meta       = result.meta  || {};
+
+    // Filter out null candles
+    const candles = timestamps.map((t, i) => ({
+      t, open: opens[i], high: highs[i], low: lows[i], close: closes[i], volume: volumes[i]
+    })).filter(c => c.close != null);
+
+    if (candles.length === 0) { showSpinner(false); showToast('No chart data available', 'error'); return; }
+
+    const labels = candles.map(c => {
+      const d = new Date(c.t * 1000);
+      if (interval === '5m' || interval === '30m') {
+        return d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', timeZone:'America/New_York' });
       }
-      return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:interval==='1month'?'2-digit':undefined});
+      if (interval === '1d') return d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+      return d.toLocaleDateString('en-US', { month:'short', year:'2-digit' });
     });
 
-    const closes = values.map(v => parseFloat(v.close));
-    const opens  = values.map(v => parseFloat(v.open));
-    const highs  = values.map(v => parseFloat(v.high));
-    const lows   = values.map(v => parseFloat(v.low));
-    const vols   = values.map(v => parseInt(v.volume||0));
-
-    // Update price display
-    const lastClose = closes[closes.length-1];
-    const firstClose= closes[0];
-    const chgAmt    = lastClose - firstClose;
-    const chgPct    = (chgAmt / firstClose * 100);
+    // Update header price display
+    const last      = candles[candles.length - 1].close;
+    const first     = candles[0].close;
+    const chgAmt    = last - first;
+    const chgPct    = (chgAmt / first * 100);
     const priceEl   = document.getElementById('live-current-price');
     const chgEl     = document.getElementById('live-price-change');
-    if (priceEl) priceEl.textContent = fmtPrice(lastClose);
+    if (priceEl) priceEl.textContent = fmtPrice(last);
     if (chgEl) {
-      chgEl.textContent = (chgAmt>=0?'+':'')+fmtPrice(chgAmt)+' ('+( chgPct>=0?'+':'')+chgPct.toFixed(2)+'%)';
-      chgEl.className = chgAmt >= 0 ? 'up' : 'down';
+      chgEl.textContent = (chgAmt >= 0 ? '+' : '') + fmtPrice(chgAmt) + '  (' + (chgPct >= 0 ? '+' : '') + chgPct.toFixed(2) + '%)';
+      chgEl.className   = chgAmt >= 0 ? 'up' : 'down';
     }
 
-    // OHLC display
+    // OHLC of last candle
     const ohlcEl = document.getElementById('live-ohlc');
-    if (ohlcEl) {
-      const last = values[values.length-1];
-      ohlcEl.innerHTML = `
-        <span>O: <strong>${fmtPrice(last.open)}</strong></span>
-        <span>H: <strong style="color:var(--green)">${fmtPrice(last.high)}</strong></span>
-        <span>L: <strong style="color:var(--red)">${fmtPrice(last.low)}</strong></span>
-        <span>C: <strong>${fmtPrice(last.close)}</strong></span>`;
-    }
+    const lc = candles[candles.length - 1];
+    if (ohlcEl) ohlcEl.innerHTML = `
+      <span>O: <strong>${fmtPrice(lc.open)}</strong></span>
+      <span>H: <strong style="color:var(--green)">${fmtPrice(lc.high)}</strong></span>
+      <span>L: <strong style="color:var(--red)">${fmtPrice(lc.low)}</strong></span>
+      <span>C: <strong>${fmtPrice(lc.close)}</strong></span>`;
+
+    // Update stats bar from meta
+    updateStatsBar({
+      price: last, prev: meta.previousClose || first,
+      open: meta.regularMarketOpen, high: meta.regularMarketDayHigh,
+      low: meta.regularMarketDayLow, volume: meta.regularMarketVolume,
+      fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh, fiftyTwoWeekLow: meta.fiftyTwoWeekLow,
+    });
 
     // Draw chart
     if (liveChart) liveChart.destroy();
-    const ctx = chartEl.getContext('2d');
+    const ctx       = chartEl.getContext('2d');
     const lineColor = chgAmt >= 0 ? '#00d17a' : '#ff5252';
+    const closePrices = candles.map(c => c.close);
 
     if (liveChartType === 'line') {
       liveChart = new Chart(ctx, {
@@ -1667,98 +1702,96 @@ async function fetchAndDrawChart() {
         data: {
           labels,
           datasets: [{
-            label: liveSymbol,
-            data: closes,
+            label: sym.name,
+            data: closePrices,
             borderColor: lineColor,
-            borderWidth: 1.5,
+            borderWidth: 2,
             pointRadius: 0,
             fill: true,
-            backgroundColor: lineColor + '12',
-            tension: 0.2,
+            backgroundColor: lineColor + '15',
+            tension: 0.3,
           }]
         },
-        options: chartOptions('$', fmtPrice)
+        options: liveChartOptions()
       });
     } else {
-      // Candlestick via bar chart simulation
-      const barData = values.map((v,i) => ({
-        x: labels[i],
-        o: parseFloat(v.open),
-        h: parseFloat(v.high),
-        l: parseFloat(v.low),
-        c: parseFloat(v.close),
-      }));
-      const barColors = barData.map(d => d.c >= d.o ? '#00d17a' : '#ff5252');
+      // Candlestick simulation with floating bar chart
+      const barColors = candles.map(c => c.close >= c.open ? '#00d17a' : '#ff5252');
       liveChart = new Chart(ctx, {
         type: 'bar',
         data: {
           labels,
           datasets: [
             {
-              label: 'Price Range',
-              data: barData.map(d => [d.l, d.h]),
-              backgroundColor: barColors.map(c => c+'55'),
+              label: 'Wick',
+              data: candles.map(c => [c.low, c.high]),
+              backgroundColor: barColors.map(c => c + '66'),
               borderColor: barColors,
               borderWidth: 1,
               borderSkipped: false,
-              barPercentage: 0.3,
+              barPercentage: 0.2,
             },
             {
-              label: 'Open/Close',
-              data: barData.map(d => [Math.min(d.o,d.c), Math.max(d.o,d.c)]),
+              label: 'Body',
+              data: candles.map(c => [Math.min(c.open, c.close), Math.max(c.open, c.close)]),
               backgroundColor: barColors,
               borderColor: barColors,
               borderWidth: 1,
               borderSkipped: false,
-              barPercentage: 0.6,
+              barPercentage: 0.7,
             }
           ]
         },
-        options: chartOptions('$', fmtPrice)
+        options: liveChartOptions()
       });
     }
 
-    spinner.style.display = 'none';
+    showSpinner(false);
     document.getElementById('live-last-updated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
     startRefreshCountdown();
 
   } catch(e) {
-    spinner.style.display = 'none';
-    showToast('Network error loading chart data.', 'error');
+    showSpinner(false);
+    showToast('Error loading chart — proxy may be busy, retrying soon.', 'error');
     console.error(e);
+    setTimeout(fetchAndDrawChart, 8000);
   }
 }
 
-function chartOptions(prefix, fmtFn) {
+function liveChartOptions() {
   return {
     responsive: true,
     maintainAspectRatio: false,
-    animation: { duration: 250 },
+    animation: { duration: 200 },
     interaction: { mode:'index', intersect:false },
     plugins: {
-      legend: { display:false },
+      legend: { display: false },
       tooltip: {
-        backgroundColor:'#1a2235', borderColor:'#2a3652', borderWidth:1,
-        titleColor:'#e8edf5', bodyColor:'#8b9dbf', padding:10,
+        backgroundColor: '#1a2235', borderColor: '#2a3652', borderWidth: 1,
+        titleColor: '#e8edf5', bodyColor: '#8b9dbf', padding: 10,
         callbacks: {
           label: item => {
             const v = item.raw;
-            if (Array.isArray(v)) return ` ${item.dataset.label}: ${fmtFn(v[0])} – ${fmtFn(v[1])}`;
-            return ` ${fmtFn(v)}`;
+            if (Array.isArray(v)) return ` ${item.dataset.label}: ${fmtPrice(v[0])} – ${fmtPrice(v[1])}`;
+            return ` ${fmtPrice(v)}`;
           }
         }
       }
     },
     scales: {
       x: {
-        grid: { color:'rgba(42,54,82,0.35)' },
-        ticks: { color:'#5a6b8a', font:{ size:10, family:"'DM Mono',monospace" }, maxTicksLimit:10 }
+        grid: { color: 'rgba(42,54,82,0.35)' },
+        ticks: { color: '#5a6b8a', font: { size: 10, family:"'DM Mono',monospace" }, maxTicksLimit: 10, maxRotation: 0 }
       },
       y: {
-        grid: { color:'rgba(42,54,82,0.35)' },
+        grid: { color: 'rgba(42,54,82,0.35)' },
         ticks: {
-          color:'#5a6b8a', font:{ size:10, family:"'DM Mono',monospace" },
-          callback: v => '$'+v.toLocaleString()
+          color: '#5a6b8a', font: { size: 10, family:"'DM Mono',monospace" },
+          callback: v => {
+            if (v >= 10000) return '$' + (v/1000).toFixed(0) + 'K';
+            if (v >= 1000)  return '$' + v.toLocaleString();
+            return '$' + v.toFixed(2);
+          }
         }
       }
     }
@@ -1766,28 +1799,27 @@ function chartOptions(prefix, fmtFn) {
 }
 
 function updateStatsBar(q) {
-  const set = (id, val) => { const el=document.getElementById(id); if(el) el.textContent=val; };
-  set('stat-52h',  fmtPrice(q.fifty_two_week?.high || q.high));
-  set('stat-52l',  fmtPrice(q.fifty_two_week?.low  || q.low));
-  set('stat-open', fmtPrice(q.open));
-  set('stat-prev', fmtPrice(q.previous_close || q.close));
-  set('stat-range',`${fmtPrice(q.low)} – ${fmtPrice(q.high)}`);
-  set('stat-vol',  fmtVol(q.volume));
-  set('stat-avgvol', fmtVol(q.average_volume));
-  set('stat-mktcap', fmtMktCap(q.market_cap));
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  set('stat-52h',   fmtPrice(q.fiftyTwoWeekHigh));
+  set('stat-52l',   fmtPrice(q.fiftyTwoWeekLow));
+  set('stat-open',  fmtPrice(q.open));
+  set('stat-prev',  fmtPrice(q.prev || q.previousClose));
+  set('stat-range', `${fmtPrice(q.low)} – ${fmtPrice(q.high)}`);
+  set('stat-vol',   fmtVol(q.volume));
+  set('stat-avgvol','—');
+  set('stat-mktcap','—');
 }
 
 function startRefreshCountdown() {
   if (liveCountdown) clearInterval(liveCountdown);
-  if (liveRefreshTimer) clearTimeout(liveRefreshTimer);
-  const refreshIn = isMarketOpen() ? 300 : 600; // 5min open, 10min closed
+  const refreshIn  = isMarketOpen() ? 300 : 900;
   liveCountdownVal = refreshIn;
-  const countEl = document.getElementById('live-refresh-countdown');
-  liveCountdown = setInterval(() => {
+  const countEl    = document.getElementById('live-refresh-countdown');
+  liveCountdown    = setInterval(() => {
     liveCountdownVal--;
     if (countEl) {
-      const m = Math.floor(liveCountdownVal/60), s = liveCountdownVal%60;
-      countEl.textContent = `Refresh in ${m}:${s.toString().padStart(2,'0')}`;
+      const m = Math.floor(liveCountdownVal / 60), s = liveCountdownVal % 60;
+      countEl.textContent = `Refresh in ${m}:${s.toString().padStart(2, '0')}`;
     }
     if (liveCountdownVal <= 0) {
       clearInterval(liveCountdown);
@@ -1803,9 +1835,10 @@ async function initLive() {
   buildSymbolTabs();
   buildLiveCards();
   updateMarketStatus();
+  setInterval(updateMarketStatus, 60000);
+  // Fetch quotes for all cards first, then draw chart
   await fetchQuotes();
   await fetchAndDrawChart();
-  setInterval(updateMarketStatus, 60000);
 }
 
 // ══════════════════════════════════════════════
